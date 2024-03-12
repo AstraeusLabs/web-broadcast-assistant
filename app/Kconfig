@@ -1,0 +1,11 @@
+mainmenu "WebUSB Broadcast Assistant"
+
+config TX_MSG_MAX_MESSAGES
+	int "The maximum number of elements in the transmit pipeline"
+	default 4
+
+config TX_MSG_MAX_PAYLOAD_LEN
+	int "The maximum payload size of a message in the transmit pipeline"
+	default 1024
+
+source "Kconfig.zephyr"

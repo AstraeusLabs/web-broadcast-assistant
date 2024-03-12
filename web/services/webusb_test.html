@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<button id="connect">CONNECT</button>
+<script type="module">
+	// @ts-check
+
+	import { cobsEncode, cobsDecode } from '../lib/cobs.js';
+	import { compareTypedArray, arrayToHex } from '../lib/helpers.js';
+	import { arrayToMsg, msgToArray, MessageType, MessageSubType } from '../lib/message.js';
+
+	import { WebUSBDeviceService } from './webusb-device-service.js';
+
+	const button = document.querySelector('#connect');
+
+	button?.addEventListener('click', WebUSBDeviceService.scan);
+
+	const messageReceived = (evt) => {
+		const { message } = evt.detail;
+		console.log('Message received', message);
+	}
+
+	WebUSBDeviceService.addEventListener('message', messageReceived);
+	let seqNo = 1;
+	const sendMessage = () => {
+		const message = {
+			type: MessageType.CMD,
+			subType: MessageSubType.DUMMY,
+			seqNo: seqNo,
+			payload: new Uint8Array([0x04, 0x44, 0x01, 0x02]) // TBD: Payload in concatenated LTV
+		}
+		seqNo++;
+		if (seqNo > 0xFF) seqNo = 1;
+
+		console.log('message', message);
+
+		WebUSBDeviceService.sendCMD(message);
+	}
+
+	WebUSBDeviceService.addEventListener('connected', evt => {
+		const { device } = evt.detail;
+		console.log('connected', device );
+
+		setInterval(sendMessage, 1000);
+	});
+
+</script>

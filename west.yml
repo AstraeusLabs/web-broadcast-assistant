@@ -1,0 +1,16 @@
+manifest:
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: 3c25bfefabaf2ab2a56e208e7372f62373a9a376
+      import:
+        name-allowlist:
+          - cmsis
+          - hal_nordic
+          - tinycrypt
+          - libmetal
+          - open-amp

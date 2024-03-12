@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<script type="module" >
+	// @ts-check
+	import { MessageType, MessageSubType } from '../lib/message.js';
+	import { WebUSBDeviceService } from '../services/webusb-device-service.js';
+	import { DummyScanComponent } from '../components/dummy-scan-component.js';
+	import { AssistantModel } from './assistant-model.js';
+
+	const heartbeatEvt = {
+		type: Number(MessageType.EVT),
+		subType: MessageSubType.HEARTBEAT,
+		seqNo: 123,
+		payload: new Uint8Array([])
+	};
+
+	const sinkFoundEvt = {
+		type: Number(MessageType.EVT),
+		subType: MessageSubType.SINK_FOUND,
+		seqNo: 123,
+		payload: new Uint8Array([])
+	};
+
+	const sourceFoundEvt = {
+		type: Number(MessageType.EVT),
+		subType: MessageSubType.SINK_FOUND,
+		seqNo: 123,
+		payload: new Uint8Array([])
+	};
+
+	const component = new DummyScanComponent();
+	const model = new AssistantModel(WebUSBDeviceService, component);
+
+	console.log('sendHeartbeat');
+	component.sendHeartbeat();
+
+	console.log('sendStartSinkScan');
+	component.sendStartSinkScan();
+
+	console.log('sendStartSourceScan');
+	component.sendStartSourceScan();
+
+	console.log('message', heartbeatEvt);
+	WebUSBDeviceService.sendMessageAsEvent(heartbeatEvt);
+
+	console.log('message', sinkFoundEvt);
+	WebUSBDeviceService.sendMessageAsEvent(sinkFoundEvt);
+
+	console.log('message', sourceFoundEvt);
+	WebUSBDeviceService.sendMessageAsEvent(sourceFoundEvt);
+
+</script>

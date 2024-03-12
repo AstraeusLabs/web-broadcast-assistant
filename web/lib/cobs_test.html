@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<script type="module" >
+	import { cobsEncode, cobsDecode } from './cobs.js';
+	import { compareTypedArray, arrayToHex } from './helpers.js';
+
+	console.log('Simple example from https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing');
+	let payload = new Uint8Array([0x11, 0x22, 0x00, 0x33]);
+	console.log('payload', `length=${payload.length}`, `data=[${arrayToHex(payload)}]`);
+
+	let encoded = cobsEncode(payload, true);
+	console.log('-> cobs', `length=${encoded.length}`, `data=[${arrayToHex(encoded)}]`);
+
+	let decoded = cobsDecode(encoded, true);
+	console.log('-> decoded', `length=${decoded.length}`, `data=[${arrayToHex(decoded)}]`);
+
+	console.log('payload == decoded?', compareTypedArray(payload, decoded));
+
+
+	console.log('Test array of zeros, zero padded encoding');
+	payload = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+	console.log('payload', `length=${payload.length}`, `data=[${arrayToHex(payload)}]`);
+
+	encoded = cobsEncode(payload, true);
+	console.log('-> cobs', `length=${encoded.length}`, `data=[${arrayToHex(encoded)}]`);
+
+	decoded = cobsDecode(encoded, true);
+	console.log('-> decoded', `length=${decoded.length}`, `data=[${arrayToHex(decoded)}]`);
+
+	console.log('payload == decoded?', compareTypedArray(payload, decoded));
+
+
+	console.log('Test array of zeros, non-zero padded encoding');
+	payload = new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+	console.log('payload', `length=${payload.length}`, `data=[${arrayToHex(payload)}]`);
+
+	encoded = cobsEncode(payload);
+	console.log('-> cobs', `length=${encoded.length}`, `data=[${arrayToHex(encoded)}]`);
+
+	decoded = cobsDecode(encoded);
+	console.log('-> decoded', `length=${decoded.length}`, `data=[${arrayToHex(decoded)}]`);
+
+	console.log('payload == decoded?', compareTypedArray(payload, decoded));
+
+
+	console.log('Test sequence mixed with blocks of zeros');
+	payload = new Uint8Array([0x11, 0x00, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x33]);
+	console.log('payload', `length=${payload.length}`, `data=[${arrayToHex(payload)}]`);
+
+	encoded = cobsEncode(payload, true);
+	console.log('-> cobs', `length=${encoded.length}`, `data=[${arrayToHex(encoded)}]`);
+
+	decoded = cobsDecode(encoded, true);
+	console.log('-> decoded', `length=${decoded.length}`, `data=[${arrayToHex(decoded)}]`);
+
+	console.log('payload == decoded?', compareTypedArray(payload, decoded));
+
+
+	console.log('Larger random array, zero padding encoding');
+	payload = new Uint8Array(Array.from({length: 10000}, () => Math.floor(Math.random() * 0xFF)));
+	console.log('payload', `length=${payload.length}`, `data=[${arrayToHex(payload)}]`);
+
+	encoded = cobsEncode(payload, true);
+	console.log('-> cobs', `length=${encoded.length}`, `data=[${arrayToHex(encoded)}]`);
+
+	decoded = cobsDecode(encoded, true);
+	console.log('-> decoded', `length=${decoded.length}`, `data=[${arrayToHex(decoded)}]`);
+
+	console.log('payload == decoded?', compareTypedArray(payload, decoded));
+
+
+	console.log('Larger random array, non-zero padded encoding');
+	payload = new Uint8Array(Array.from({length: 10000}, () => Math.floor(Math.random() * 0xFF)));
+	console.log('payload', `length=${payload.length}`, `data=[${arrayToHex(payload)}]`);
+
+	encoded = cobsEncode(payload);
+	console.log('-> cobs', `length=${encoded.length}`, `data=[${arrayToHex(encoded)}]`);
+
+	decoded = cobsDecode(encoded);
+	console.log('-> decoded', `length=${decoded.length}`, `data=[${arrayToHex(decoded)}]`);
+
+	console.log('payload == decoded?', compareTypedArray(payload, decoded));
+</script>
