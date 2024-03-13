@@ -800,7 +800,7 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 {
 	LOG_INF("Adding broadcast source...");
 
-	struct bt_bap_scan_delegator_subgroup subgroup = {0};
+	struct bt_bap_bass_subgroup subgroup = {0};
 	struct bt_bap_broadcast_assistant_add_src_param param = {0};
 	int err = 0;
 
@@ -839,7 +839,7 @@ int remove_source(void)
 {
 	LOG_INF("Removing broadcast source...");
 
-	struct bt_bap_scan_delegator_subgroup subgroup = {0}; /* bis_sync = 0 */
+	struct bt_bap_bass_subgroup subgroup = {0}; /* bis_sync = 0 */
 	struct bt_bap_broadcast_assistant_mod_src_param param = { 0 };
 	int err = 0;
 
