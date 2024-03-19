@@ -9,6 +9,7 @@
 #include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/drivers/gpio.h>
 
 #include "webusb.h"
 #include "message_handler.h"
@@ -79,6 +80,9 @@ static uint8_t ba_scan_target;
 static uint32_t ba_source_broadcast_id;
 static uint8_t ba_source_id; /* Source ID of the receive state */
 static struct bt_bap_scan_delegator_recv_state recv_state = {0};
+
+const struct gpio_dt_spec sinkLed = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+const struct gpio_dt_spec sourceLed = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 
 /*
  * Private functions
@@ -250,6 +254,8 @@ static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err)
 	net_buf_add_le32(evt_msg, err);
 
 	send_net_buf_event(MESSAGE_SUBTYPE_SOURCE_ADDED, evt_msg);
+
+	gpio_pin_set(sourceLed.port, sourceLed.pin, 1);
 }
 
 static void broadcast_assistant_mod_src_cb(struct bt_conn *conn, int err)
@@ -271,6 +277,8 @@ static void broadcast_assistant_rem_src_cb(struct bt_conn *conn, int err)
 {
 	LOG_INF("BASS remove source (err: %d)", err);
 	ba_source_id = 0;
+
+	gpio_pin_set(sourceLed.port, sourceLed.pin, 0);
 }
 
 static void connected(struct bt_conn *conn, uint8_t err)
@@ -311,6 +319,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		LOG_ERR("Setting security failed (err %d)", err);
 	}
 
+	gpio_pin_set(sinkLed.port, sinkLed.pin, 1);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -340,6 +349,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	ba_sink_conn = NULL;
 
 	send_net_buf_event(MESSAGE_SUBTYPE_SINK_DISCONNECTED, evt_msg);
+
+	gpio_pin_set(sinkLed.port, sinkLed.pin, 0);
 }
 
 static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
@@ -878,6 +889,22 @@ int broadcast_assistant_init(void)
 	bt_le_scan_cb_register(&scan_callbacks);
 	bt_bap_broadcast_assistant_register_cb(&broadcast_assistant_callbacks);
 	LOG_INF("Bluetooth scan callback registered");
+
+	if (!device_is_ready(sinkLed.port) ||
+	    !device_is_ready(sourceLed.port)) {
+		return -1;
+	}
+	err = gpio_pin_configure_dt(&sinkLed, GPIO_OUTPUT_INACTIVE);
+	if (err < 0) {
+		return err;
+	}
+	err = gpio_pin_configure_dt(&sourceLed, GPIO_OUTPUT_INACTIVE);
+	if (err < 0) {
+		return err;
+	}
+	gpio_pin_set(sinkLed.port, sinkLed.pin, 0);
+	gpio_pin_set(sourceLed.port, sourceLed.pin, 0);
+	LOG_INF("LED's initialzed");
 
 	ba_scan_target = 0;
 
