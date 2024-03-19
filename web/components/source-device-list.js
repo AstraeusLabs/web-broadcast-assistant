@@ -131,7 +131,7 @@ export class SourceDeviceList extends HTMLElement {
 		let found = elements;
 
 		for (const t of this.#filterTokens) {
-			found = found.filter(i => i.getModel().addr?.value.toLowerCase().includes(t) ||
+			found = found.filter(i => i.getModel().addr?.value.addrStr.toLowerCase().includes(t) ||
 				i.getModel().name?.toLowerCase().includes(t) ||
 				i.getModel().broadcast_name?.toLowerCase().includes(t));
 		}

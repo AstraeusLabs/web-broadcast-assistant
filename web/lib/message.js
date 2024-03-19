@@ -283,6 +283,7 @@ const parseLTVItem = (type, len, value) => {
 			type: value[0],
 			addr: value.slice(1)
 		}
+		item.value.addrStr = bufToAddressString(item.value.addr);
 		const subTypeName = keyName(MessageSubType, type);
 		console.log(subTypeName, item.value, bufToAddressString(item.value.addr));
 		break;
