@@ -1,31 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg version="1.1" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-<defs>
-<filter id="a" x="-.00050667" y="-.00050667" width="1.001" height="1.001" color-interpolation-filters="sRGB">
-<feGaussianBlur stdDeviation="0.00045000005"/>
-</filter>
-</defs>
-<metadata>
-<rdf:RDF>
-<cc:Work rdf:about="">
-<dc:format>image/svg+xml</dc:format>
-<dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-</cc:Work>
-</rdf:RDF>
-</metadata>
+<svg version="1.1" viewBox="0 0 32 32" width="32px" heigth="32px" xmlns="http://www.w3.org/2000/svg" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 <g stroke-miterlimit="0">
-<circle transform="matrix(1.0796 1.0796 -1.0796 1.0796 -21.767 38.041)" cx="8" cy="-33" r="6" fill="#fff" filter="url(#a)" stroke="#000" stroke-width=".01"/>
-<g stroke-width=".015268">
-<ellipse transform="rotate(-45)" cx="-1.064" cy="14.561" rx="9.1609" ry="9.1609" fill="#ff420e" stroke="#000"/>
-<rect transform="rotate(-45)" x="-10.227" y="26.776" width="6.1073" height="6.1073" fill="#ff420e"/>
-<rect transform="rotate(-45)" x="-4.12" y="26.776" width="6.1073" height="6.1073" fill="#fff" stroke="#000"/>
-<rect transform="rotate(-45)" x="1.9873" y="26.776" width="6.1073" height="6.1073" fill="#ff420e"/>
-<rect transform="rotate(-45)" x="-10.227" y="20.669" width="6.1073" height="6.1073" fill="#fff" stroke="#000"/>
-<rect transform="rotate(-45)" x="-10.227" y="14.561" width="6.1073" height="6.1073" fill="#ff420e"/>
-<rect transform="rotate(-45)" x="-4.12" y="20.669" width="6.1073" height="6.1073" fill="#ff420e"/>
-<rect transform="rotate(-45)" x="1.9873" y="20.669" width="6.1073" height="6.1073" fill="#fff"/>
-<rect transform="rotate(-45)" x="-4.12" y="14.561" width="6.1073" height="6.1073" fill="#fff"/>
-<rect transform="rotate(-45)" x="1.9873" y="14.561" width="6.1073" height="6.1073" fill="#ff420e"/>
-</g>
+<circle transform="matrix(1.0796 1.0796 -1.0796 1.0796 -21.767 38.041)" cx="8" cy="-33" r="6" fill="#ff420e" filter="url(#a)" stroke="#000" stroke-width="0"/>
+<ellipse transform="rotate(-45)" cx="-1.064" cy="14.561" rx="9.1609" ry="9.1609" fill="#fff" stroke="#000" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="-10.227" y="26.776" width="6.1073" height="6.1073" fill="#fff" stroke="#000" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="-4.12" y="26.776" width="6.1073" height="6.1073" fill="#ff420e" stroke="#000" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="1.9873" y="26.776" width="6.1073" height="6.1073" fill="#fff" stroke="#000" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="-10.227" y="20.669" width="6.1073" height="6.1073" fill="#ff420e" stroke="#000" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="-10.227" y="14.561" width="6.1073" height="6.1073" fill="#fff" stroke="#000" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="-4.12" y="20.669" width="6.1073" height="6.1073" fill="#fff" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="1.9873" y="20.669" width="6.1073" height="6.1073" fill="#ff420e" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="-4.12" y="14.561" width="6.1073" height="6.1073" fill="#ff420e" stroke-width=".1"/>
+<rect transform="rotate(-45)" x="1.9873" y="14.561" width="6.1073" height="6.1073" fill="#fff" stroke="#000" stroke-width=".1"/>
 </g>
 </svg>
