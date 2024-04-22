@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2016-2019 Intel Corporation
+ * Copyright (c) 2023 Nordic Semiconductor ASA
  * Copyright (c) 2024 Demant A/S
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -156,8 +158,9 @@ USB_DEVICE_BOS_DESC_DEFINE_CAP struct usb_bos_capability_lpm bos_cap_lpm = {
 	/**
 	 * BIT(1) - LPM support
 	 * BIT(2) - BESL support
+	 * (no support for this)
 	 */
-	.bmAttributes = BIT(1) | BIT(2),
+	.bmAttributes = 0
 };
 
 /* WebUSB Device Requests */
