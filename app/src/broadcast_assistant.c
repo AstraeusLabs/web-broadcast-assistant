@@ -19,6 +19,23 @@ LOG_MODULE_REGISTER(broadcast_assistant, LOG_LEVEL_INF);
 #define BT_NAME_LEN 30
 #define INVALID_BROADCAST_ID 0xFFFFFFFFU
 
+#define PA_SYNC_SKIP                      5
+#define PA_SYNC_INTERVAL_TO_TIMEOUT_RATIO 20 /* Set the timeout relative to interval */
+
+#define MAX_NUMBER_OF_SOURCES 20
+
+typedef struct source_data {
+	bt_addr_le_t addr;
+	bool base_received;
+} source_data_t;
+
+typedef struct source_data_list {
+	uint8_t num;
+	source_data_t data[MAX_NUMBER_OF_SOURCES];
+} source_data_list_t;
+
+source_data_list_t source_data_list;
+
 struct scan_recv_data {
 	char bt_name[BT_NAME_LEN];
 	uint8_t bt_name_type;
@@ -27,6 +44,12 @@ struct scan_recv_data {
 	bool has_bass;
 	bool has_pacs;
 };
+
+static struct k_mutex source_data_list_mutex;
+static struct bt_le_per_adv_sync *pa_sync;
+static volatile bool pa_syncing;
+
+static struct k_work pa_sync_delete_work;
 
 static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err,
 					    uint8_t recv_state_count);
@@ -83,6 +106,86 @@ static struct bt_bap_scan_delegator_recv_state recv_state = {0};
 /*
  * Private functions
  */
+
+static void pa_sync_delete(struct k_work *work)
+{
+	int err;
+
+	LOG_INF("pa_sync_delete");
+
+	err = bt_le_per_adv_sync_delete(pa_sync);
+	if (err) {
+		LOG_INF("bt_le_per_adv_sync_delete failed (%d)", err);
+	}
+}
+
+static void source_data_reset(void)
+{
+	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
+	for (int i = 0; i < MAX_NUMBER_OF_SOURCES; i++) {
+		bt_addr_le_copy(&source_data_list.data[i].addr, BT_ADDR_LE_NONE);
+		source_data_list.data[i].base_received = false;
+
+	}
+	source_data_list.num = 0;
+	k_mutex_unlock(&source_data_list_mutex);
+}
+
+static void source_data_add(const bt_addr_le_t *addr)
+{
+	int i;
+	bool new_source = true;
+	char addr_str[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
+
+	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
+	for (i = 0; i < source_data_list.num; i++) {
+		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0) {
+			LOG_INF("Source already added (%s)", addr_str);
+			new_source = false;
+			break;
+		}
+	}
+
+	if (new_source && i < MAX_NUMBER_OF_SOURCES) {
+		bt_addr_le_copy(&source_data_list.data[i].addr, addr);
+		source_data_list.data[i].base_received = false;
+		source_data_list.num++;
+		LOG_INF("Source added (%s), (%u)", addr_str, source_data_list.num);
+	}
+
+	k_mutex_unlock(&source_data_list_mutex);
+}
+
+static bool source_data_get_base_received(const bt_addr_le_t *addr)
+{
+	bool base_received = false;
+
+	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
+	for (int i = 0; i < source_data_list.num; i++) {
+		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0 &&
+		    source_data_list.data[i].base_received) {
+			base_received = true;
+			break;
+		}
+	}
+	k_mutex_unlock(&source_data_list_mutex);
+
+	return base_received;
+}
+
+static void source_data_set_base_received(const bt_addr_le_t *addr)
+{
+	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
+	for (int i = 0; i < source_data_list.num; i++) {
+		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0) {
+			source_data_list.data[i].base_received = true;
+			break;
+		}
+	}
+	k_mutex_unlock(&source_data_list_mutex);
+}
 
 static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8_t recv_state_count)
 {
@@ -477,7 +580,7 @@ static bool device_found(struct bt_data *data, void *user_data)
 
 		/* Check for BASS and PACS */
 		if (data->data_len % sizeof(uint16_t) != 0U) {
-			LOG_ERR("UUID16 AD malformed\n");
+			LOG_ERR("UUID16 AD malformed");
 			return true;
 		}
 
@@ -504,6 +607,115 @@ static bool device_found(struct bt_data *data, void *user_data)
 	}
 }
 
+static bool base_search(struct bt_data *data, void *user_data)
+{
+	const struct bt_bap_base *base = bt_bap_base_get_base_from_ad(data);
+
+	/* Base is NULL if the data does not contain a valid BASE */
+	if (base == NULL) {
+		return true;
+	}
+
+	/* Base found */
+	*(bool *)user_data = true;
+
+	return false;
+}
+
+static void pa_synced_cb(struct bt_le_per_adv_sync *sync,
+			 struct bt_le_per_adv_sync_synced_info *info)
+{
+	LOG_INF("PA sync %p synced", (void *)sync);
+}
+
+static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
+		       const struct bt_le_per_adv_sync_recv_info *info, struct net_buf_simple *buf)
+{
+	bool base_found = false;
+
+	if (sync != pa_sync) {
+		return;
+	}
+
+	LOG_INF("PA receive %p", (void *)sync);
+	bt_data_parse(buf, base_search, (void *)&base_found);
+
+	if (base_found) {
+		enum message_sub_type evt_msg_sub_type;
+		struct net_buf *evt_msg;
+
+		LOG_INF("BASE found, delete PA sync");
+		source_data_set_base_received(info->addr);
+
+		k_work_submit(&pa_sync_delete_work);
+
+		evt_msg_sub_type = MESSAGE_SUBTYPE_SOURCE_BASE_FOUND;
+		evt_msg = message_alloc_tx_message();
+
+		net_buf_add_u8(evt_msg, buf->len + 1);
+		net_buf_add_u8(evt_msg, BT_DATA_BASE);
+		net_buf_add_mem(evt_msg, buf->data, buf->len);
+
+		/* Append data from struct bt_le_scan_recv_info (BT addr) */
+		/* Bluetooth LE Device Address */
+		net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
+		net_buf_add_u8(evt_msg,
+			       bt_addr_le_is_identity(info->addr) ? BT_DATA_IDENTITY : BT_DATA_RPA);
+		net_buf_add_u8(evt_msg, info->addr->type);
+		net_buf_add_mem(evt_msg, &info->addr->a, sizeof(bt_addr_t));
+
+		send_net_buf_event(evt_msg_sub_type, evt_msg);
+	}
+}
+
+static void pa_term_cb(struct bt_le_per_adv_sync *sync,
+		       const struct bt_le_per_adv_sync_term_info *info)
+{
+	LOG_INF("PA terminated %p", (void *)sync);
+	pa_syncing = false;
+}
+
+static struct bt_le_per_adv_sync_cb pa_synced_callbacks = {
+	.synced = pa_synced_cb,
+	.recv = pa_recv_cb,
+	.term = pa_term_cb,
+};
+
+static uint16_t interval_to_sync_timeout(uint16_t pa_interval)
+{
+	uint16_t pa_timeout;
+
+	if (pa_interval == BT_BAP_PA_INTERVAL_UNKNOWN) {
+		/* Use maximum value to maximize chance of success */
+		pa_timeout = BT_GAP_PER_ADV_MAX_TIMEOUT;
+	} else {
+		uint32_t interval_ms;
+		uint32_t timeout;
+
+		/* Add retries and convert to unit in 10's of ms */
+		interval_ms = BT_GAP_PER_ADV_INTERVAL_TO_MS(pa_interval);
+		timeout = (interval_ms * PA_SYNC_INTERVAL_TO_TIMEOUT_RATIO) / 10;
+
+		/* Enforce restraints */
+		pa_timeout = CLAMP(timeout, BT_GAP_PER_ADV_MIN_TIMEOUT, BT_GAP_PER_ADV_MAX_TIMEOUT);
+	}
+
+	return pa_timeout;
+}
+
+static int pa_sync_create(const struct bt_le_scan_recv_info *info)
+{
+	struct bt_le_per_adv_sync_param per_adv_sync_param = {0};
+
+	bt_addr_le_copy(&per_adv_sync_param.addr, info->addr);
+	per_adv_sync_param.options = BT_LE_PER_ADV_SYNC_OPT_FILTER_DUPLICATE;
+	per_adv_sync_param.sid = info->sid;
+	per_adv_sync_param.skip = PA_SYNC_SKIP;
+	per_adv_sync_param.timeout = interval_to_sync_timeout(info->interval);
+
+	return bt_le_per_adv_sync_create(&per_adv_sync_param, &pa_sync);
+}
+
 static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_buf_simple *ad,
 			    struct scan_recv_data *sr_data)
 {
@@ -522,10 +734,17 @@ static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_
 		LOG_INF("Broadcast Source Found [name, b_name, b_id] = [\"%s\", \"%s\", 0x%06x]",
 			sr_data->bt_name, sr_data->broadcast_name, sr_data->broadcast_id);
 
-		/* TODO: Add support for syncing to the PA and parsing the BASE
-		 * in order to obtain the right subgroup information to send to
-		 * the sink when adding a broadcast source (see in main function below).
-		 */
+		source_data_add(info->addr);
+
+		if (!pa_syncing && !source_data_get_base_received(info->addr)) {
+			LOG_INF("PA sync create (b_id = 0x%06x)", sr_data->broadcast_id);
+			int err = pa_sync_create(info);
+			if (err != 0) {
+				LOG_INF("Could not create Broadcast PA sync: %d", err);
+			} else {
+				pa_syncing = true;
+			}
+		}
 
 		return true;
 	}
@@ -656,12 +875,20 @@ static void scan_timeout_cb(void)
 
 int start_scan(uint8_t target)
 {
-	if (ba_scan_target == 0) {
-		int err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
-		if (err) {
-			LOG_ERR("Scanning failed to start (err %d)", err);
-			return err;
-		}
+	if (ba_scan_target != 0) {
+		/* Scan already ongoing */
+		return 0;
+	}
+
+	if (target == BROADCAST_ASSISTANT_SCAN_TARGET_ALL ||
+	    target == BROADCAST_ASSISTANT_SCAN_TARGET_SOURCE) {
+		source_data_reset();
+	}
+
+	int err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
+	if (err) {
+		LOG_ERR("Scanning failed to start (err %d)", err);
+		return err;
 	}
 
 	ba_scan_target = target;
@@ -678,13 +905,13 @@ int stop_scanning(void)
 		return 0;
 	}
 
-	ba_scan_target = 0;
-
 	int err = bt_le_scan_stop();
 	if (err) {
 		LOG_ERR("bt_le_scan_stop failed with %d", err);
 		return err;
 	}
+
+	ba_scan_target = 0;
 
 	LOG_INF("Scanning stopped");
 
@@ -867,6 +1094,8 @@ int broadcast_assistant_init(void)
 {
 	ba_sink_conn = NULL;
 
+	k_work_init(&pa_sync_delete_work, &pa_sync_delete);
+
 	int err = bt_enable(NULL);
 	if (err) {
 		LOG_ERR("Bluetooth init failed (err %d)", err);
@@ -876,9 +1105,11 @@ int broadcast_assistant_init(void)
 	LOG_INF("Bluetooth initialized");
 
 	bt_le_scan_cb_register(&scan_callbacks);
+	bt_le_per_adv_sync_cb_register(&pa_synced_callbacks);
 	bt_bap_broadcast_assistant_register_cb(&broadcast_assistant_callbacks);
 	LOG_INF("Bluetooth scan callback registered");
 
+	k_mutex_init(&source_data_list_mutex);
 	ba_scan_target = 0;
 
 	return 0;
