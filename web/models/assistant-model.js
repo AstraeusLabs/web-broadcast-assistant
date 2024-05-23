@@ -138,6 +138,33 @@ export class AssistantModel extends EventTarget {
 		}
 	}
 
+	handleSourceBaseFound(message) {
+		console.log(`Handle found Source BASE`);
+
+		const payloadArray = ltvToTvArray(message.payload);
+		// console.log('Payload', payloadArray);
+
+		const addr = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_IDENTITY,
+			BT_DataType.BT_DATA_RPA
+		]);
+
+		if (!addr) {
+			// TBD: Throw exception?
+			return;
+		}
+
+		const base = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_BASE
+		])?.value;
+
+		let source = this.#sources.find(i => compareTypedArray(i.addr.value.addr, addr.value.addr));
+		if (source && base) {
+			source.base = base;
+			this.dispatchEvent(new CustomEvent('source-updated', {detail: { source }}));
+		}
+	}
+
 	handleBISSync(message, isSynced) {
 		console.log(`Handle BIS Sync`);
 
@@ -349,6 +376,9 @@ export class AssistantModel extends EventTarget {
 			break;
 			case MessageSubType.SOURCE_FOUND:
 			this.handleSourceFound(message);
+			break;
+			case MessageSubType.SOURCE_BASE_FOUND:
+			this.handleSourceBaseFound(message);
 			break;
 			case MessageSubType.SOURCE_ADDED:
 			console.log("Source Added");

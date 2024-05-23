@@ -6,6 +6,7 @@
 
 import { cobsEncode, cobsDecode } from './cobs.js';
 import { arrayToHex } from './helpers.js';
+import { parse_base } from './bap_base.js';
 
 /**
 * This module contains enums and functions related to messages
@@ -288,6 +289,10 @@ const parseLTVItem = (type, len, value) => {
 		item.value.addrStr = bufToAddressString(item.value.addr);
 		const subTypeName = keyName(MessageSubType, type);
 		console.log(subTypeName, item.value, bufToAddressString(item.value.addr));
+		break;
+		case BT_DataType.BT_DATA_BASE:
+		item.value = parse_base(value);
+		console.log('BASE received', value, JSON.stringify(item.value, null, 2));
 		break;
 		default:
 		item.value = "UNHANDLED";
