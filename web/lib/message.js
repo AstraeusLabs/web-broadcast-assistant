@@ -54,6 +54,7 @@ export const MessageSubType = Object.freeze({
 	BIS_SYNCED:			0x8C,
 	BIS_UNSYNCED:			0x8D,
 	IDENTITY_RESOLVED:		0x8E,
+	SOURCE_BASE_FOUND:		0x8F,
 
 	HEARTBEAT:			0xFF,
 });
@@ -72,6 +73,7 @@ export const BT_DataType = Object.freeze({
 	BT_DATA_BROADCAST_NAME:		0x30,	// utf8 (variable len)
 
 	// The following types are created for this app (not standard)
+	BT_DATA_BASE:                   0xf7,   // uint8[] (variable len)
 	BT_DATA_IDENTITY:		0xf8,   // uint8 (type) + uint8[6] (addr)
 	BT_DATA_RPA:			0xf9,   // uint8 (type) + uint8[6] (addr)
 	BT_DATA_BROADCAST_ID:		0xfa,	// uint24
