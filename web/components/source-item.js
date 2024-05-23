@@ -19,7 +19,7 @@ div {
 	position: relative;
 	box-sizing: border-box;
 	min-width: 5.14em;
-	height: 75px;
+	height: 100px;
 	margin: 0.2em;
 	background: transparent;
 	text-align: center;
@@ -68,6 +68,13 @@ div {
 	font-size: 0.9em;
 }
 
+#base {
+	position: absolute;
+	left: 5px;
+	bottom: 25px;
+	font-size: 0.9em;
+}
+
 #card[state="selected"] {
 	background-color: lightgreen;
 	box-shadow: 1px 1px 2px 2px gray;
@@ -79,6 +86,7 @@ div {
 <span id="addr"></span>
 <span id="broadcast_id"></span>
 <span id="rssi"></span>
+<span id="base">BASE:</span>
 </div>
 `;
 
@@ -106,6 +114,7 @@ export class SourceItem extends HTMLElement {
 	#addrEl
 	#broadcastIdEl
 	#rssiEl
+	#baseEl
 
 	constructor() {
 		super();
@@ -124,6 +133,36 @@ export class SourceItem extends HTMLElement {
 		this.#addrEl = this.shadowRoot?.querySelector('#addr');
 		this.#broadcastIdEl = this.shadowRoot?.querySelector('#broadcast_id');
 		this.#rssiEl = this.shadowRoot?.querySelector('#rssi');
+		this.#baseEl = this.shadowRoot?.querySelector('#base');
+	}
+
+	baseInfoString(base) {
+		let result = "BASE: ";
+
+		if (!base) {
+			result += "Pending...";
+		} else {
+			// Subgroups
+			let sg_count = 0;
+			base.subgroups?.forEach(subgroup => {
+				let sg_str = `SG[${sg_count}]:(`;
+				const str_tk = [];
+				const freq = subgroup.codec_data?.find(i => i.name === "SamplingFrequency")?.value;
+				if (freq) {
+					str_tk.push(`Freq: ${freq}Hz`);
+				}
+				str_tk.push(`BIS_CNT=${subgroup.bises?.length || 0}`)
+				sg_str += str_tk.join(', ');
+				sg_str += ")";
+
+				console.log(sg_str);
+				result += sg_str;
+
+				sg_count++;
+			})
+		}
+
+		return result;
 	}
 
 	refresh() {
@@ -132,6 +171,7 @@ export class SourceItem extends HTMLElement {
 		this.#broadcastNameEl.textContent = this.#source.broadcast_name;
 		this.#addrEl.textContent = `Addr: ${addrString(this.#source.addr)}`;
 		this.#rssiEl.textContent = `RSSI: ${this.#source.rssi}`;
+		this.#baseEl.textContent = this.baseInfoString(this.#source.base);
 		this.#broadcastIdEl.textContent = `Broadcast ID: 0x${
 			this.#source.broadcast_id?.toString(16).padStart(6, '0').toUpperCase()}`;
 
