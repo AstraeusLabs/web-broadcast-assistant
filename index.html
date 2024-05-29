@@ -2,6 +2,17 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- BarcodeDetector polyfill (fallback, where not available)-->
+    <script src="https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.15/dist/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@undecaf/barcode-detector-polyfill@0.9.20/dist/index.js"></script>
+    <script>
+      if ('BarcodeDetector' in window) {
+        console.log('BarcodeDetector supported in platform');
+      } else {
+        console.log('BarcodeDetector not supported in platform, using polyfill');
+        window.BarcodeDetector = barcodeDetectorPolyfill.BarcodeDetectorPolyfill;
+      }
+    </script>
   </head>
 <style>
   body {
