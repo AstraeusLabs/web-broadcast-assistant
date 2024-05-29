@@ -6,6 +6,7 @@
 
 import './components/sink-device-list.js';
 import './components/source-device-list.js';
+import {QrScanner} from './components/qr-scanner.js';
 import './components/heart-beat.js';
 
 import * as AssistantModel from './models/assistant-model.js';
@@ -131,6 +132,31 @@ button:disabled {
 	border: 2px solid black;
 }
 
+#qrscannerbox {
+	display: flex;
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 100vw;
+	height: 100vh;
+
+	background: rgba(255, 255, 255, 0.8);
+	backdrop-filter: blur(10px);
+
+	z-index: 900;
+}
+
+#qrscannerbox.hidden {
+	display: none;
+}
+
+.qrscannercontent {
+	margin: auto;
+	position: relative;
+	width: 90%;
+	max-width: 500px;
+}
+
 #splashbox {
 	display: flex;
 	position: fixed;
@@ -181,6 +207,7 @@ button:disabled {
 
 			<!-- broadcast source components... -->
 			<source-device-list></source-device-list>
+			<button id="qr_scan">Broadcast Audio URI QR Scan</button>
 		</div>
 	</div>
 </div>
@@ -189,6 +216,15 @@ button:disabled {
 	<div class="content">
 		<div class="col">
 			<div id="activity" class="textbox"></div>
+		</div>
+	</div>
+</div>
+
+<div id="qrscannerbox" class="hidden">
+	<div class="qrscannercontent">
+		<div class="col">
+			<h2>Scan Broadcast Audio URI</h2>
+			<qr-scanner></qr-scanner>
 		</div>
 	</div>
 </div>
@@ -208,8 +244,10 @@ export class MainApp extends HTMLElement {
 	#scanSinkButton
 	#scanSourceButton
 	#stopScanButton
+	#qrScanButton
 	#model
 	#pageState
+	#qrScanner
 
 	constructor() {
 		super();
@@ -233,6 +271,9 @@ export class MainApp extends HTMLElement {
 		this.sendStopScan = this.sendStopScan.bind(this);
 		this.sendStartSinkScan = this.sendStartSinkScan.bind(this);
 		this.sendStartSourceScan = this.sendStartSourceScan.bind(this);
+		this.doQrScan = this.doQrScan.bind(this);
+		this.closeQrScanner = this.closeQrScanner.bind(this);
+		this.bauFound = this.bauFound.bind(this);
 	}
 
 	initializeModels() {
@@ -323,6 +364,12 @@ export class MainApp extends HTMLElement {
 		this.#scanSourceButton.addEventListener('click', this.sendStartSourceScan);
 		// this.#scanSourceButton.disabled = true;
 
+		this.#qrScanButton = this.shadowRoot?.querySelector('#qr_scan');
+		this.#qrScanButton.addEventListener('click', this.doQrScan);
+		this.#qrScanner = this.shadowRoot?.querySelector('qr-scanner');
+		this.#qrScanner.addEventListener('close', this.closeQrScanner);
+		this.#qrScanner.addEventListener('bau-found', this.bauFound);
+
 		this.#model.addEventListener('scan-stopped', this.scanStopped);
 		this.#model.addEventListener('sink-scan-started', this.sinkScanStarted);
 		this.#model.addEventListener('source-scan-started', this.sourceScanStarted);
@@ -394,6 +441,32 @@ export class MainApp extends HTMLElement {
 		this.#model.startSourceScan();
 
 		this.#scanSourceButton.disabled = true;
+	}
+
+	doQrScan() {
+		console.log("Clicked QR Scan");
+
+		const qrscannerbox = this.shadowRoot?.querySelector('#qrscannerbox');
+
+		qrscannerbox?.classList.remove('hidden');
+
+		this.#qrScanner.startCamera();
+	}
+
+	closeQrScanner() {
+		this.#qrScanner.stopCamera();
+
+		const qrscannerbox = this.shadowRoot?.querySelector('#qrscannerbox');
+
+		qrscannerbox?.classList.add('hidden');
+	}
+
+	bauFound(evt) {
+		const {decoded, raw} = evt.detail;
+
+		console.log('BAU', raw, decoded);
+
+		this.#model.addSourceFromBroadcastAudioURI(decoded);
 	}
 }
 customElements.define('main-app', MainApp);

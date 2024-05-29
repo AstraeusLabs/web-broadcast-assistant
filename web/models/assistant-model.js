@@ -84,6 +84,53 @@ export class AssistantModel extends EventTarget {
 		this.dispatchEvent(new CustomEvent('heartbeat-received', {detail: heartbeat_cnt}));
 	}
 
+	addSourceFromBroadcastAudioURI(parsedCode) {
+		const source = {};
+
+		// First, fetch the address type
+		let addressType = 0;
+		const atToken = parsedCode.find(t => t.type === 'AT');
+		if (atToken) {
+			addressType = atToken.value;
+		}
+
+		parsedCode.forEach(token => {
+			switch(token.type) {
+				case 'AD':
+					source.addr = {
+						value: {
+							...token.value,
+							type: addressType,
+						},
+						type: BT_DataType.BT_DATA_RPA
+					}
+					break;
+				case 'BN':
+					source.broadcast_name = token.value;
+					break;
+				case 'BI':
+					source.broadcast_id = token.value;
+					break;
+				case 'PI':
+					source.pa_interval = token.value;
+					break;
+				case 'AS':
+					source.sid = token.value;
+					break;
+			}
+		});
+
+		console.log(source);
+
+		let existingSource = this.#sources.find(i => compareTypedArray(i.addr.value.addr, source.addr.value.addr));
+		if (!existingSource) {
+			this.#sources.push(source)
+			this.dispatchEvent(new CustomEvent('source-found', {detail: { source }}));
+		} else {
+			console.log('Broadcast Audio URI already added');
+		}
+	}
+
 	handleSourceFound(message) {
 		console.log(`Handle found Source`);
 
