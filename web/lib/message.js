@@ -37,6 +37,7 @@ export const MessageSubType = Object.freeze({
 	DISCONNECT_SINK:		0x06,
 	ADD_SOURCE:			0x07,
 	REMOVE_SOURCE:			0x08,
+	BIG_BCODE:			0x09,
 
 	RESET:				0x2A,
 
@@ -56,6 +57,11 @@ export const MessageSubType = Object.freeze({
 	BIS_UNSYNCED:			0x8D,
 	IDENTITY_RESOLVED:		0x8E,
 	SOURCE_BASE_FOUND:		0x8F,
+	SOURCE_BIG_INFO:		0x90,
+	SOURCE_BIG_ENC_NO_ENC:		0x91,
+	SOURCE_BIG_ENC_BCODE_REQ:	0x92,
+	SOURCE_BIG_ENC_NO_DEC:		0x93,
+	SOURCE_BIG_ENC_NO_BAD_CODE:	0x94,
 
 	HEARTBEAT:			0xFF,
 });
@@ -71,12 +77,15 @@ export const BT_DataType = Object.freeze({
 
 	BT_DATA_SVC_DATA16:		0x16,
 
+	BT_DATA_BIG_INFO:		0x2c,	// uint8[18]
+	BT_DATA_BROADCAST_CODE:		0x2d,	// uint8[16]
 	BT_DATA_BROADCAST_NAME:		0x30,	// utf8 (variable len)
 
 	// The following types are created for this app (not standard)
-	BT_DATA_BASE:                   0xf7,   // uint8[] (variable len)
-	BT_DATA_IDENTITY:		0xf8,   // uint8 (type) + uint8[6] (addr)
-	BT_DATA_RPA:			0xf9,   // uint8 (type) + uint8[6] (addr)
+	BT_DATA_SOURCE_ID:		0xf6,	// uint8
+	BT_DATA_BASE:			0xf7,	// uint8[] (variable len)
+	BT_DATA_IDENTITY:		0xf8,	// uint8 (type) + uint8[6] (addr)
+	BT_DATA_RPA:			0xf9,	// uint8 (type) + uint8[6] (addr)
 	BT_DATA_BROADCAST_ID:		0xfa,	// uint24
 	BT_DATA_ERROR_CODE:		0xfb,	// int32
 	BT_DATA_PA_INTERVAL:		0xfc,	// uint16
@@ -377,6 +386,9 @@ export const tvArrayToLtv = arr => {
 			break;
 			case BT_DataType.BT_DATA_SID:
 			outArr = uintToArray(value, 1);	//uint8
+			break;
+			case BT_DataType.BT_DATA_BROADCAST_CODE:
+			outArr = Array.from(value);	//uint8 array
 			break;
 			default:
 			// Don't add fields we don't handle yet

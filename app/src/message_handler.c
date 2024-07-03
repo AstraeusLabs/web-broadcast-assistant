@@ -24,6 +24,8 @@ struct webusb_ltv_data {
 	uint16_t pa_interval;
 	uint32_t broadcast_id;
 	bt_addr_le_t addr;
+	uint8_t src_id;
+	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
 } __packed;
 
 
@@ -195,6 +197,14 @@ bool ltv_found(struct bt_data *data, void *user_data)
 		bt_addr_le_to_str(&_parsed->addr, addr_str, sizeof(addr_str));
 		LOG_DBG("Addr: %s", addr_str);
 		return true;
+	case BT_DATA_SOURCE_ID:
+		_parsed->src_id = data->data[0];
+		LOG_DBG("src_id: %u", _parsed->src_id);
+		return true;
+	case BT_DATA_BROADCAST_CODE:
+		memcpy(&_parsed->broadcast_code, &data->data[0], BT_AUDIO_BROADCAST_CODE_SIZE);
+		LOG_HEXDUMP_DBG(_parsed->broadcast_code, BT_AUDIO_BROADCAST_CODE_SIZE, "broadcast code:");
+		return true;
 	default:
 		LOG_DBG("Unknown type");
 	}
@@ -284,6 +294,12 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 		LOG_DBG("MESSAGE_SUBTYPE_REMOVE_SOURCE (len %u)", msg_length);
 		msg_rc = remove_source();
 		send_response(MESSAGE_SUBTYPE_REMOVE_SOURCE, msg_seq_no, msg_rc);
+		break;
+
+	case MESSAGE_SUBTYPE_BIG_BCODE:
+		LOG_DBG("MESSAGE_SUBTYPE_BIG_BCODE (len %u)", msg_length);
+		msg_rc = add_broadcast_code(parsed_ltv_data.src_id, parsed_ltv_data.broadcast_code);
+		send_response(MESSAGE_SUBTYPE_BIG_BCODE, msg_seq_no, msg_rc);
 		break;
 
 	case MESSAGE_SUBTYPE_RESET:
