@@ -459,6 +459,10 @@ export class AssistantModel extends EventTarget {
 			case MessageSubType.IDENTITY_RESOLVED:
 			this.handleIdentityResolved(message);
 			break;
+			case MessageSubType.SOURCE_BIG_ENC_BCODE_REQ:
+			console.log('Add broadcast code');
+			this.addBroadcastCode();
+			break;
 			default:
 			console.log(`Missing handler for EVT subType 0x${message.subType.toString(16)}`);
 		}
@@ -590,6 +594,34 @@ export class AssistantModel extends EventTarget {
 		const message = {
 			type: Number(MessageType.CMD),
 			subType: MessageSubType.ADD_SOURCE,
+			seqNo: 123,
+			payload
+		};
+
+		this.#service.sendCMD(message);
+	}
+
+	addBroadcastCode() {
+		console.log("Sending Broadcast Code CMD");
+
+		const srcIdItem = { type: BT_DataType.BT_DATA_SOURCE_ID, value: 0 };
+		console.log(srcIdItem);
+
+		const broadcastCodeItem = { type: BT_DataType.BT_DATA_BROADCAST_CODE, value: new Uint8Array([49, 50, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) };
+		console.log(broadcastCodeItem);
+
+		const tvArr = [
+			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: 0 },
+			{ type: BT_DataType.BT_DATA_BROADCAST_CODE, value: new Uint8Array([49, 50, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) },
+		];
+
+		const payload = tvArrayToLtv(tvArr);
+
+		console.log('Add Broadcast Code payload', payload)
+
+		const message = {
+			type: Number(MessageType.CMD),
+			subType: MessageSubType.BIG_BCODE,
 			seqNo: 123,
 			payload
 		};
