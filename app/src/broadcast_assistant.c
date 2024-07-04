@@ -26,7 +26,7 @@ LOG_MODULE_REGISTER(broadcast_assistant, LOG_LEVEL_INF);
 
 typedef struct source_data {
 	bt_addr_le_t addr;
-	bool base_received;
+	bool pa_recv;
 } source_data_t;
 
 typedef struct source_data_list {
@@ -48,8 +48,6 @@ struct scan_recv_data {
 static struct k_mutex source_data_list_mutex;
 static struct bt_le_per_adv_sync *pa_sync;
 static volatile bool pa_syncing;
-static volatile bool biginfo_received;
-static volatile bool base_received;
 
 static struct k_work pa_sync_delete_work;
 
@@ -126,7 +124,7 @@ static void source_data_reset(void)
 	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
 	for (int i = 0; i < MAX_NUMBER_OF_SOURCES; i++) {
 		bt_addr_le_copy(&source_data_list.data[i].addr, BT_ADDR_LE_NONE);
-		source_data_list.data[i].base_received = false;
+		source_data_list.data[i].pa_recv = false;
 
 	}
 	source_data_list.num = 0;
@@ -152,7 +150,7 @@ static void source_data_add(const bt_addr_le_t *addr)
 
 	if (new_source && i < MAX_NUMBER_OF_SOURCES) {
 		bt_addr_le_copy(&source_data_list.data[i].addr, addr);
-		source_data_list.data[i].base_received = false;
+		source_data_list.data[i].pa_recv = false;
 		source_data_list.num++;
 		LOG_INF("Source added (%s), (%u)", addr_str, source_data_list.num);
 	}
@@ -160,29 +158,29 @@ static void source_data_add(const bt_addr_le_t *addr)
 	k_mutex_unlock(&source_data_list_mutex);
 }
 
-static bool source_data_get_base_received(const bt_addr_le_t *addr)
+static bool source_data_get_pa_recv(const bt_addr_le_t *addr)
 {
-	bool base_received = false;
+	bool pa_recv = false;
 
 	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
 	for (int i = 0; i < source_data_list.num; i++) {
 		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0 &&
-		    source_data_list.data[i].base_received) {
-			base_received = true;
+		    source_data_list.data[i].pa_recv) {
+			pa_recv = true;
 			break;
 		}
 	}
 	k_mutex_unlock(&source_data_list_mutex);
 
-	return base_received;
+	return pa_recv;
 }
 
-static void source_data_set_base_received(const bt_addr_le_t *addr)
+static void source_data_set_pa_recv(const bt_addr_le_t *addr)
 {
 	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
 	for (int i = 0; i < source_data_list.num; i++) {
 		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0) {
-			source_data_list.data[i].base_received = true;
+			source_data_list.data[i].pa_recv = true;
 			break;
 		}
 	}
@@ -681,10 +679,6 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 		return;
 	}
 
-	if (base_received) {
-		return;
-	}
-
 	bt_data_parse(buf, base_search, (void *)&base_found);
 
 	if (base_found) {
@@ -692,7 +686,7 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 		struct net_buf *evt_msg;
 
 		LOG_INF("BASE found");
-		source_data_set_base_received(info->addr);
+		source_data_set_pa_recv(info->addr);
 
 		evt_msg_sub_type = MESSAGE_SUBTYPE_SOURCE_BASE_FOUND;
 		evt_msg = message_alloc_tx_message();
@@ -711,12 +705,10 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 
 		send_net_buf_event(evt_msg_sub_type, evt_msg);
 
-		base_received = true;
-
-		if (base_received && biginfo_received && pa_syncing) {
+		if (pa_syncing) {
 			LOG_INF("Delete PA sync");
-			pa_syncing = false;
 			k_work_submit(&pa_sync_delete_work);
+			pa_syncing = false;
 		}
 	}
 }
@@ -734,11 +726,6 @@ static void pa_biginfo_cb(struct bt_le_per_adv_sync *sync, const struct bt_iso_b
 
 	LOG_INF("BIGinfo received (num_bis = %u), %s", biginfo->num_bis,
 		biginfo->encryption ? "encrypted" : "not encrypted");
-
-	if (biginfo_received) {
-		/* Only send first BIG info */
-		return;
-	}
 
 	evt_msg_sub_type = MESSAGE_SUBTYPE_SOURCE_BIG_INFO;
 	evt_msg = message_alloc_tx_message();
@@ -766,14 +753,6 @@ static void pa_biginfo_cb(struct bt_le_per_adv_sync *sync, const struct bt_iso_b
 	net_buf_add_u8(evt_msg, biginfo->encryption ? 1 : 0);
 
 	send_net_buf_event(evt_msg_sub_type, evt_msg);
-
-	biginfo_received = true;
-
-	if (base_received && biginfo_received && pa_syncing) {
-		LOG_INF("Delete PA sync");
-		pa_syncing = false;
-		k_work_submit(&pa_sync_delete_work);
-	}
 }
 
 static struct bt_le_per_adv_sync_cb pa_synced_callbacks = {
@@ -838,15 +817,13 @@ static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_
 
 		source_data_add(info->addr);
 
-		if (!pa_syncing && !source_data_get_base_received(info->addr)) {
+		if (!pa_syncing && !source_data_get_pa_recv(info->addr)) {
 			LOG_INF("PA sync create (b_id = 0x%06x)", sr_data->broadcast_id);
 			int err = pa_sync_create(info);
 			if (err != 0) {
 				LOG_INF("Could not create Broadcast PA sync: %d", err);
 			} else {
 				pa_syncing = true;
-				base_received = false;
-				biginfo_received = false;
 			}
 		}
 
@@ -1018,6 +995,12 @@ int stop_scanning(void)
 	ba_scan_target = 0;
 
 	LOG_INF("Scanning stopped");
+
+	if (pa_syncing) {
+		LOG_INF("Delete PA sync");
+		k_work_submit(&pa_sync_delete_work);
+		pa_syncing = false;
+	}
 
 	return 0;
 }
@@ -1206,7 +1189,9 @@ int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BRO
 		return -ENOTCONN;
 	}
 
-	err = bt_bap_broadcast_assistant_set_broadcast_code(ba_sink_conn, src_id, broadcast_code);
+	/* TODO: Use src_id */
+	err = bt_bap_broadcast_assistant_set_broadcast_code(ba_sink_conn, ba_source_id,
+							    broadcast_code);
 	if (err) {
 		LOG_ERR("Failed to add broadcast code (err %d)", err);
 		return err;
