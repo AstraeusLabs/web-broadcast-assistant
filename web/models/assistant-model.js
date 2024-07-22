@@ -397,6 +397,10 @@ export class AssistantModel extends EventTarget {
 			console.log('ADD_SOURCE response received');
 			// NOOP/TODO
 			break;
+			case MessageSubType.BIG_BCODE:
+			console.log('BIG_BCODE response received');
+			this.dispatchEvent(new CustomEvent('scan-stopped'));
+			break;
 			case MessageSubType.RESET:
 			console.log('RESET response received');
 			this.dispatchEvent(new CustomEvent('scan-stopped'));
@@ -461,7 +465,11 @@ export class AssistantModel extends EventTarget {
 			break;
 			case MessageSubType.SOURCE_BIG_ENC_BCODE_REQ:
 			console.log('Add broadcast code');
-			this.addBroadcastCode();
+			this.getBroadcastCode();
+			break;
+			case MessageSubType.SOURCE_BIG_ENC_NO_BAD_CODE:
+			console.log('No/Bad broadcast code');
+			this.getBroadcastCode();
 			break;
 			default:
 			console.log(`Missing handler for EVT subType 0x${message.subType.toString(16)}`);
@@ -601,18 +609,18 @@ export class AssistantModel extends EventTarget {
 		this.#service.sendCMD(message);
 	}
 
-	addBroadcastCode() {
+	getBroadcastCode() {
+		console.log("Query for Broadcast Code");
+
+		this.dispatchEvent(new CustomEvent('bc-request'));
+	}
+
+	sendBroadcastCode(arr) {
 		console.log("Sending Broadcast Code CMD");
-
-		const srcIdItem = { type: BT_DataType.BT_DATA_SOURCE_ID, value: 0 };
-		console.log(srcIdItem);
-
-		const broadcastCodeItem = { type: BT_DataType.BT_DATA_BROADCAST_CODE, value: new Uint8Array([49, 50, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) };
-		console.log(broadcastCodeItem);
 
 		const tvArr = [
 			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: 0 },
-			{ type: BT_DataType.BT_DATA_BROADCAST_CODE, value: new Uint8Array([49, 50, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) },
+			{ type: BT_DataType.BT_DATA_BROADCAST_CODE, value: arr },
 		];
 
 		const payload = tvArrayToLtv(tvArr);

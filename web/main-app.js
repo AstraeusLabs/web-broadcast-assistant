@@ -7,6 +7,7 @@
 import './components/sink-device-list.js';
 import './components/source-device-list.js';
 import {QrScanner} from './components/qr-scanner.js';
+import {BroadcastCodeQuery} from './components/broadcast-code-query.js';
 import './components/heart-beat.js';
 
 import * as AssistantModel from './models/assistant-model.js';
@@ -238,6 +239,10 @@ button:disabled {
 	</div>
 </div>
 
+<div id="bc-query" class="hidden">
+	<broadcast-code-query></broadcast-code-query>
+</div>
+
 `;
 
 export class MainApp extends HTMLElement {
@@ -248,6 +253,7 @@ export class MainApp extends HTMLElement {
 	#model
 	#pageState
 	#qrScanner
+	#bcQuery
 
 	constructor() {
 		super();
@@ -274,6 +280,8 @@ export class MainApp extends HTMLElement {
 		this.doQrScan = this.doQrScan.bind(this);
 		this.closeQrScanner = this.closeQrScanner.bind(this);
 		this.bauFound = this.bauFound.bind(this);
+		this.requestBC = this.requestBC.bind(this);
+		this.bcReceived = this.bcReceived.bind(this);
 	}
 
 	initializeModels() {
@@ -369,6 +377,10 @@ export class MainApp extends HTMLElement {
 		this.#qrScanner = this.shadowRoot?.querySelector('qr-scanner');
 		this.#qrScanner.addEventListener('close', this.closeQrScanner);
 		this.#qrScanner.addEventListener('bau-found', this.bauFound);
+
+		this.#bcQuery = this.shadowRoot?.querySelector('broadcast-code-query');
+		this.#model.addEventListener('bc-request', this.requestBC);
+		this.#bcQuery.addEventListener('bc-received', this.bcReceived);
 
 		this.#model.addEventListener('scan-stopped', this.scanStopped);
 		this.#model.addEventListener('sink-scan-started', this.sinkScanStarted);
@@ -467,6 +479,18 @@ export class MainApp extends HTMLElement {
 		console.log('BAU', raw, decoded);
 
 		this.#model.addSourceFromBroadcastAudioURI(decoded);
+	}
+
+	requestBC() {
+		console.log('Request BC');
+
+		this.#bcQuery.queryBCCode();
+	}
+
+	bcReceived(evt) {
+		console.log('Recevied BC');
+
+		this.#model.sendBroadcastCode(evt.detail.arr);
 	}
 }
 customElements.define('main-app', MainApp);
