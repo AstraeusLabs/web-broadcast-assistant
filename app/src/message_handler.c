@@ -34,7 +34,7 @@ K_TIMER_DEFINE(heartbeat_timer, heartbeat_timeout_handler, NULL);
 
 static void log_ltv(uint8_t *data, uint16_t data_len);
 
-#define LTV_STR_LEN 256
+#define LTV_STR_LEN 512
 
 static void log_ltv(uint8_t *data, uint16_t data_len)
 {
@@ -161,7 +161,7 @@ void send_net_buf_event(enum message_sub_type stype, struct net_buf *tx_net_buf)
 	net_buf_push_u8(tx_net_buf, stype);
 	net_buf_push_u8(tx_net_buf, MESSAGE_TYPE_EVT);
 
-	LOG_INF("send_net_buf_event(stype: %d)", stype);
+	LOG_INF("send_net_buf_event(stype: %d, len: %zu)", stype, tx_net_buf->len);
 	log_ltv(&tx_net_buf->data[0], tx_net_buf->len);
 
 	ret = webusb_transmit(tx_net_buf);
