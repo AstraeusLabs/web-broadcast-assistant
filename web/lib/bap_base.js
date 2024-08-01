@@ -292,6 +292,10 @@ const parseMetaLTVItem = (type, len, value) => {
 		case BT_Meta.StreamingAudioContexts:
                 item.value = getIntAt(value, 0, 2);
 		break;
+		case BT_Meta.Language:
+                const decoder = new TextDecoder();
+                item.value = decoder.decode(value);
+		break;
 		default:
 		item.value = "UNHANDLED";
 		break;
