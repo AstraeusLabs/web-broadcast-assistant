@@ -34,7 +34,7 @@ K_TIMER_DEFINE(heartbeat_timer, heartbeat_timeout_handler, NULL);
 
 static void log_ltv(uint8_t *data, uint16_t data_len);
 
-#define LTV_STR_LEN 512
+#define LTV_STR_LEN 1024
 
 static void log_ltv(uint8_t *data, uint16_t data_len)
 {
