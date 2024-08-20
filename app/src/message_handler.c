@@ -26,8 +26,11 @@ struct webusb_ltv_data {
 	bt_addr_le_t addr;
 	uint8_t src_id;
 	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
-} __packed;
+	uint8_t num_subgroups;
+	uint32_t bis_sync[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS];
+};
 
+static struct webusb_ltv_data parsed_ltv_data;
 
 static void heartbeat_timeout_handler(struct k_timer *dummy_p);
 K_TIMER_DEFINE(heartbeat_timer, heartbeat_timeout_handler, NULL);
@@ -68,7 +71,6 @@ static void log_ltv(uint8_t *data, uint16_t data_len)
 	}
 }
 
-static struct webusb_ltv_data parsed_ltv_data;
 static void heartbeat_timeout_handler(struct k_timer *timer)
 {
 	static uint8_t heartbeat_cnt = 0;
@@ -205,6 +207,14 @@ bool ltv_found(struct bt_data *data, void *user_data)
 		memcpy(&_parsed->broadcast_code, &data->data[0], BT_AUDIO_BROADCAST_CODE_SIZE);
 		LOG_HEXDUMP_DBG(_parsed->broadcast_code, BT_AUDIO_BROADCAST_CODE_SIZE, "broadcast code:");
 		return true;
+	case BT_DATA_BIS_SYNC:
+		_parsed->num_subgroups = data->data_len / sizeof(_parsed->bis_sync[0]);
+		uint8_t *bis_sync_data = (uint8_t *)data->data;
+		for (int i = 0; i < _parsed->num_subgroups; i++, bis_sync_data += sizeof(_parsed->bis_sync[0])) {
+			_parsed->bis_sync[i] = sys_get_le32(bis_sync_data);
+		}
+		LOG_HEXDUMP_DBG(_parsed->bis_sync, data->data_len, "bis_sync:");
+		return true;
 	default:
 		LOG_DBG("Unknown type");
 	}
@@ -230,6 +240,7 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 	msg_net_buf.size = CONFIG_TX_MSG_MAX_PAYLOAD_LEN;
 	msg_net_buf.__buf = msg_ptr->payload;
 
+	memset(&parsed_ltv_data, 0, sizeof(parsed_ltv_data));
 	bt_data_parse(&msg_net_buf, ltv_found, (void *)&parsed_ltv_data);
 
 	switch (msg_sub_type) {
@@ -286,7 +297,8 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 	case MESSAGE_SUBTYPE_ADD_SOURCE:
 		LOG_DBG("MESSAGE_SUBTYPE_ADD_SOURCE (len %u)", msg_length);
 		msg_rc = add_source(parsed_ltv_data.adv_sid, parsed_ltv_data.pa_interval,
-				    parsed_ltv_data.broadcast_id, &parsed_ltv_data.addr);
+				    parsed_ltv_data.broadcast_id, &parsed_ltv_data.addr,
+				    parsed_ltv_data.num_subgroups, parsed_ltv_data.bis_sync);
 		send_response(MESSAGE_SUBTYPE_ADD_SOURCE, msg_seq_no, msg_rc);
 		break;
 

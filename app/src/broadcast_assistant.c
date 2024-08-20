@@ -101,6 +101,7 @@ static struct bt_conn *ba_sink_conn; /* TODO: Make a list of sinks */
 static uint8_t ba_scan_target;
 static uint32_t ba_source_broadcast_id;
 static uint8_t ba_source_id; /* Source ID of the receive state */
+static uint8_t ba_num_subgroups;
 static struct bt_bap_scan_delegator_recv_state recv_state = {0};
 
 /*
@@ -1110,15 +1111,26 @@ int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 	return 0;
 }
 
-int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr_le_t *addr)
+int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr_le_t *addr,
+	       uint8_t num_subgroups, uint32_t *bis_sync)
 {
 	LOG_INF("Adding broadcast source...");
 
-	struct bt_bap_bass_subgroup subgroup = {0};
+	struct bt_bap_bass_subgroup subgroup[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS] = {{0}};
 	struct bt_bap_broadcast_assistant_add_src_param param = {0};
 	int err = 0;
 
-	subgroup.bis_sync = BT_BAP_BIS_SYNC_NO_PREF; /* We might want to hard code to BIT(1) */
+	/* keep number of subgroups as global variable */
+	ba_num_subgroups = MIN(num_subgroups, CONFIG_BT_BAP_BASS_MAX_SUBGROUPS);
+	for (int i = 0; i < ba_num_subgroups; i++) {
+		subgroup[i].bis_sync = bis_sync[i];
+	}
+
+	/* TODO: Remove if case below when web part supports number of subgroups */
+	if (ba_num_subgroups == 0) {
+		ba_num_subgroups = 1;
+		subgroup[0].bis_sync = BT_BAP_BIS_SYNC_NO_PREF;
+	}
 
 	bt_addr_le_copy(&param.addr, addr);
 	param.adv_sid = sid;
@@ -1129,11 +1141,11 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	/* keep broadcast_id as global variable */
 	ba_source_broadcast_id = broadcast_id;
 
-	LOG_INF("adv_sid = %u, pa_interval = %u, broadcast_id = 0x%08x", param.adv_sid,
-		param.pa_interval, param.broadcast_id);
+	LOG_INF("adv_sid = %u, pa_interval = %u, broadcast_id = 0x%08x, num_subgroups = %u",
+		param.adv_sid, param.pa_interval, param.broadcast_id, num_subgroups);
 
-	param.num_subgroups = 1;
-	param.subgroups = &subgroup;
+	param.num_subgroups = ba_num_subgroups;
+	param.subgroups = subgroup;
 
 	if (!ba_sink_conn) {
 		LOG_INF("No sink connected!");
@@ -1149,19 +1161,19 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	return 0;
 }
 
-int remove_source(void)
+int remove_source()
 {
 	LOG_INF("Removing broadcast source...");
 
-	struct bt_bap_bass_subgroup subgroup = {0}; /* bis_sync = 0 */
+	struct bt_bap_bass_subgroup subgroup[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS] = {{0}}; /* bis_sync = 0 */
 	struct bt_bap_broadcast_assistant_mod_src_param param = { 0 };
 	int err = 0;
 
 	param.src_id = ba_source_id;
 	param.pa_sync = false; /* stop sync to periodic advertisements */
 	param.pa_interval = BT_BAP_PA_INTERVAL_UNKNOWN;
-	param.num_subgroups = 1; /* TODO: Support multiple subgroups */
-	param.subgroups = &subgroup;
+	param.num_subgroups = ba_num_subgroups;
+	param.subgroups = subgroup;
 
 	if (!ba_sink_conn) {
 		LOG_INF("No sink connected!");
