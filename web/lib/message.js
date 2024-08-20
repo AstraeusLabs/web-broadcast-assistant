@@ -82,6 +82,7 @@ export const BT_DataType = Object.freeze({
 	BT_DATA_BROADCAST_NAME:		0x30,	// utf8 (variable len)
 
 	// The following types are created for this app (not standard)
+	BT_DATA_BIS_SYNC:		0xf5,	// uint32
 	BT_DATA_SOURCE_ID:		0xf6,	// uint8
 	BT_DATA_BASE:			0xf7,	// uint8[] (variable len)
 	BT_DATA_IDENTITY:		0xf8,	// uint8 (type) + uint8[6] (addr)
