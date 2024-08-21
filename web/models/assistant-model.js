@@ -45,7 +45,7 @@ import { compareTypedArray } from '../lib/helpers.js';
 *
 */
 
-export class AssistantModel extends EventTarget {
+class AssistantModel extends EventTarget {
 	#service
 	#sinks
 	#sources
@@ -208,7 +208,7 @@ export class AssistantModel extends EventTarget {
 		let source = this.#sources.find(i => compareTypedArray(i.addr.value.addr, addr.value.addr));
 		if (source && base) {
 			source.base = base;
-			this.dispatchEvent(new CustomEvent('source-updated', {detail: { source }}));
+			this.dispatchEvent(new CustomEvent('base-updated', {detail: { source }}));
 		}
 	}
 

@@ -79,6 +79,7 @@ export class SourceDeviceList extends HTMLElement {
 
 		this.#model.addEventListener('source-found', this.sourceFound);
 		this.#model.addEventListener('source-updated', this.sourceUpdated);
+		this.#model.addEventListener('base-updated', this.sourceUpdated);
 		this.#model.addEventListener('reset', () => { this.#list.replaceChildren()})
 	}
 
