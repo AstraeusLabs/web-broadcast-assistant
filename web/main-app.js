@@ -11,6 +11,7 @@ import {BroadcastCodeQuery} from './components/broadcast-code-query.js';
 import './components/heart-beat.js';
 
 import * as AssistantModel from './models/assistant-model.js';
+import { StorageModel } from './models/storage-model.js';
 import { WebUSBDeviceService } from './services/webusb-device-service.js';
 import {
 	logString,
@@ -183,7 +184,9 @@ button:disabled {
 	max-width: 500px;
 }
 
-
+.storage.hidden {
+	display: none;
+}
 
 </style>
 
@@ -209,6 +212,12 @@ button:disabled {
 			<!-- broadcast source components... -->
 			<source-device-list></source-device-list>
 			<button id="qr_scan">Broadcast Audio URI QR Scan</button>
+
+			<!-- storage buttons, enable with store=y -->
+			<div class="row storage hidden">
+			<button id="storage_clear">Clear<br>storage</button>
+			<button id='storage_download'>Download<br>storage</button>
+			</div>
 		</div>
 	</div>
 </div>
@@ -251,6 +260,7 @@ export class MainApp extends HTMLElement {
 	#stopScanButton
 	#qrScanButton
 	#model
+	#storage
 	#pageState
 	#qrScanner
 	#bcQuery
@@ -288,6 +298,8 @@ export class MainApp extends HTMLElement {
 		console.log("Initialize Models...");
 
 		this.#model = AssistantModel.initializeAssistantModel(WebUSBDeviceService);
+
+		this.#storage = new StorageModel(this.#model);
 	}
 
 	initializeLogging(el) {
@@ -398,6 +410,15 @@ export class MainApp extends HTMLElement {
 			heartbeat?.remove();
 		}
 
+		const storageUI = this.shadowRoot?.querySelector('.storage');
+		if (this.#pageState.get('storage') === 'y') {
+			storageUI?.classList.remove('hidden');
+
+			this.shadowRoot?.querySelector('#storage_clear')?.
+				addEventListener('click', () => this.#storage.clear('source'));
+			this.shadowRoot?.querySelector('#storage_download')?.
+				addEventListener('click', () => this.#storage.download('source'));
+		}
 
 		WebUSBDeviceService.reconnectPairedDevices();
 	}
