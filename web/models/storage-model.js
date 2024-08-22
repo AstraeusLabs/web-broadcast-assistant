@@ -92,13 +92,12 @@ export class StorageModel extends EventTarget {
 
                 // create blob from content
                 const blob = new Blob([JSON.stringify(result, null, 2)]);
-                const filename = `sources_${new Date().toISOString()}.json`;
+                const filename = `sources_${new Date().toISOString()}.txt`;
 
                 // Begin 'download' (use Web Share API, if available)
-                if(navigator.canShare && navigator.canShare({ files: filesArray })) {
-                        const files = [new File([blob], filename, {type: 'text/json'})];
-
-                        navigator.share({ text: 'List of sources', files});
+                const files = [new File([blob], filename, {type: 'text/plain'})];
+                if(navigator.canShare && navigator.canShare({ files })) {
+                        navigator.share({ files });
                 } else {
                         const a = document.createElement("a");
                         const url = URL.createObjectURL(blob);

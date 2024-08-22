@@ -417,7 +417,8 @@ export class MainApp extends HTMLElement {
 			this.shadowRoot?.querySelector('#storage_clear')?.
 				addEventListener('click', () => this.#storage.clear('source'));
 			this.shadowRoot?.querySelector('#storage_download')?.
-				addEventListener('click', () => this.#storage.download('source'));
+				addEventListener('click', evt => {
+					this.#storage.download('source')});
 		}
 
 		WebUSBDeviceService.reconnectPairedDevices();
