@@ -56,8 +56,7 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err,
 					    uint8_t recv_state_count);
 static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 					      const struct bt_bap_scan_delegator_recv_state *state);
-static void broadcast_assistant_recv_state_removed_cb(struct bt_conn *conn, int err,
-						      uint8_t src_id);
+static void broadcast_assistant_recv_state_removed_cb(struct bt_conn *conn, uint8_t src_id);
 static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err);
 static void broadcast_assistant_mod_src_cb(struct bt_conn *conn, int err);
 static void broadcast_assistant_rem_src_cb(struct bt_conn *conn, int err);
@@ -377,10 +376,10 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 	memcpy(&ba_recv_state, state, sizeof(struct bt_bap_scan_delegator_recv_state));
 }
 
-static void broadcast_assistant_recv_state_removed_cb(struct bt_conn *conn, int err, uint8_t src_id)
+static void broadcast_assistant_recv_state_removed_cb(struct bt_conn *conn, uint8_t src_id)
 {
-	LOG_INF("Broadcast assistant recv_state_removed callback (%p, %d, %u)", (void *)conn, err, src_id);
-	send_event(MESSAGE_SUBTYPE_SOURCE_REMOVED, err);
+	LOG_INF("Broadcast assistant recv_state_removed callback (%p, %u)", (void *)conn, src_id);
+	send_event(MESSAGE_SUBTYPE_SOURCE_REMOVED, 0);
 }
 
 static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err)
