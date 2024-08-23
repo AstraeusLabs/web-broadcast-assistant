@@ -18,6 +18,7 @@ LOG_MODULE_REGISTER(broadcast_assistant, LOG_LEVEL_INF);
 
 #define BT_NAME_LEN 30
 #define INVALID_BROADCAST_ID 0xFFFFFFFFU
+#define BIG_SYNC_FAILED 0xFFFFFFFFU
 
 #define PA_SYNC_SKIP                      5
 #define PA_SYNC_INTERVAL_TO_TIMEOUT_RATIO 20 /* Set the timeout relative to interval */
@@ -102,7 +103,7 @@ static uint8_t ba_scan_target;
 static uint32_t ba_source_broadcast_id;
 static uint8_t ba_source_id; /* Source ID of the receive state */
 static uint8_t ba_num_subgroups;
-static struct bt_bap_scan_delegator_recv_state recv_state = {0};
+static struct bt_bap_scan_delegator_recv_state ba_recv_state = {0};
 
 /*
  * Private functions
@@ -232,11 +233,13 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 	struct net_buf *evt_msg;
 	enum message_sub_type evt_msg_sub_type;
 	const bt_addr_le_t *bt_addr_le;
+	bool bis_synced;
+	bool bis_sync_changed;
 
 	LOG_INF("Broadcast assistant recv_state callback (%p, %d, %u)", (void *)conn, err, state->src_id);
 
-	if (state->encrypt_state != recv_state.encrypt_state) {
-		LOG_INF("Going from encrypt state %u to %u", recv_state.encrypt_state, state->encrypt_state);
+	if (state->encrypt_state != ba_recv_state.encrypt_state) {
+		LOG_INF("Going from encrypt state %u to %u", ba_recv_state.encrypt_state, state->encrypt_state);
 
 		switch (state->encrypt_state) {
 		case BT_BAP_BIG_ENC_STATE_NO_ENC:
@@ -277,8 +280,8 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
 
-	if (state->pa_sync_state != recv_state.pa_sync_state) {
-		LOG_INF("Going from PA state %u to %u", recv_state.pa_sync_state, state->pa_sync_state);
+	if (state->pa_sync_state != ba_recv_state.pa_sync_state) {
+		LOG_INF("Going from PA state %u to %u", ba_recv_state.pa_sync_state, state->pa_sync_state);
 
 		switch (state->pa_sync_state) {
 		case BT_BAP_PA_STATE_NOT_SYNCED:
@@ -324,37 +327,54 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
 
+	/* BIG synced? */
+	bis_sync_changed = false;
+	bis_synced = false;
 	for (int i = 0; i < state->num_subgroups; i++) {
-		if (state->subgroups[i].bis_sync != recv_state.subgroups[i].bis_sync) {
-			/* BIS sync changed */
-			evt_msg_sub_type = state->subgroups[i].bis_sync == 0
-						   ? MESSAGE_SUBTYPE_BIS_NOT_SYNCED
-						   : MESSAGE_SUBTYPE_BIS_SYNCED;
-
-			LOG_INF("%s", evt_msg_sub_type == MESSAGE_SUBTYPE_BIS_SYNCED
-					      ? "MESSAGE_SUBTYPE_BIS_SYNCED"
-					      : "MESSAGE_SUBTYPE_BIS_NOT_SYNCED");
-
-			evt_msg = message_alloc_tx_message();
-
-			/* Bluetooth LE Device Address */
-			bt_addr_le = bt_conn_get_dst(conn);
-			net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
-			net_buf_add_u8(evt_msg, bt_addr_le_is_identity(bt_addr_le) ? BT_DATA_IDENTITY : BT_DATA_RPA);
-			net_buf_add_u8(evt_msg, bt_addr_le->type);
-			net_buf_add_mem(evt_msg, &bt_addr_le->a, sizeof(bt_addr_t));
-
-			/* broadcast id */
-			net_buf_add_u8(evt_msg, 5);
-			net_buf_add_u8(evt_msg, BT_DATA_BROADCAST_ID);
-			net_buf_add_le32(evt_msg, state->broadcast_id);
-
-			send_net_buf_event(evt_msg_sub_type, evt_msg);
+		if (state->subgroups[i].bis_sync != ba_recv_state.subgroups[i].bis_sync) {
+			/* bis sync changed */
+			bis_sync_changed = true;
+			if (state->subgroups[i].bis_sync == BIG_SYNC_FAILED) {
+				/* Specification not crystal clear on this but it's assumed when one
+				 * bis_sync has the value of 0xFFFFFFFF then all bis_sync's are set
+				 * this indicating BIG sync failed.
+				 */
+				LOG_ERR("Failed to sync to BIG!");
+				bis_synced = false;
+				break;
+			}
+			bis_synced = bis_synced || (state->subgroups[i].bis_sync == 0 ? false : true);
 		}
 	}
 
+	if (bis_sync_changed) {
+		/* BIS sync changed */
+		evt_msg_sub_type = bis_synced ? MESSAGE_SUBTYPE_BIS_SYNCED : MESSAGE_SUBTYPE_BIS_NOT_SYNCED;
+
+		LOG_INF("%s", evt_msg_sub_type == MESSAGE_SUBTYPE_BIS_SYNCED
+				      ? "MESSAGE_SUBTYPE_BIS_SYNCED"
+				      : "MESSAGE_SUBTYPE_BIS_NOT_SYNCED");
+
+		evt_msg = message_alloc_tx_message();
+
+		/* Bluetooth LE Device Address */
+		bt_addr_le = bt_conn_get_dst(conn);
+		net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
+		net_buf_add_u8(evt_msg,
+			       bt_addr_le_is_identity(bt_addr_le) ? BT_DATA_IDENTITY : BT_DATA_RPA);
+		net_buf_add_u8(evt_msg, bt_addr_le->type);
+		net_buf_add_mem(evt_msg, &bt_addr_le->a, sizeof(bt_addr_t));
+
+		/* broadcast id */
+		net_buf_add_u8(evt_msg, 5);
+		net_buf_add_u8(evt_msg, BT_DATA_BROADCAST_ID);
+		net_buf_add_le32(evt_msg, state->broadcast_id);
+
+		send_net_buf_event(evt_msg_sub_type, evt_msg);
+	}
+
 	/* Store latest recv_state */
-	memcpy(&recv_state, state, sizeof(struct bt_bap_scan_delegator_recv_state));
+	memcpy(&ba_recv_state, state, sizeof(struct bt_bap_scan_delegator_recv_state));
 }
 
 static void broadcast_assistant_recv_state_removed_cb(struct bt_conn *conn, int err, uint8_t src_id)
@@ -1120,6 +1140,9 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	struct bt_bap_broadcast_assistant_add_src_param param = {0};
 	int err = 0;
 
+	/* Clear recv_state */
+	memset(&ba_recv_state, 0, sizeof(ba_recv_state));
+
 	/* keep number of subgroups as global variable */
 	ba_num_subgroups = MIN(num_subgroups, CONFIG_BT_BAP_BASS_MAX_SUBGROUPS);
 	for (int i = 0; i < ba_num_subgroups; i++) {
@@ -1142,7 +1165,7 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	ba_source_broadcast_id = broadcast_id;
 
 	LOG_INF("adv_sid = %u, pa_interval = %u, broadcast_id = 0x%08x, num_subgroups = %u",
-		param.adv_sid, param.pa_interval, param.broadcast_id, num_subgroups);
+		param.adv_sid, param.pa_interval, param.broadcast_id, ba_num_subgroups);
 
 	param.num_subgroups = ba_num_subgroups;
 	param.subgroups = subgroup;

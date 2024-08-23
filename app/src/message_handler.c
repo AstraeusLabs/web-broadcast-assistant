@@ -10,6 +10,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/net/buf.h>
 #include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/audio/bap.h>
 
 #include "webusb.h"
 #include "broadcast_assistant.h"
@@ -176,7 +177,7 @@ bool ltv_found(struct bt_data *data, void *user_data)
 {
 	struct webusb_ltv_data *_parsed = (struct webusb_ltv_data *)user_data;
 
-	LOG_DBG("Found LTV structure with type %u", data->type);
+	LOG_DBG("Found LTV structure with type %u, len = %u", data->type, data->data_len);
 
 	switch (data->type) {
 	case BT_DATA_SID:
@@ -209,10 +210,7 @@ bool ltv_found(struct bt_data *data, void *user_data)
 		return true;
 	case BT_DATA_BIS_SYNC:
 		_parsed->num_subgroups = data->data_len / sizeof(_parsed->bis_sync[0]);
-		uint8_t *bis_sync_data = (uint8_t *)data->data;
-		for (int i = 0; i < _parsed->num_subgroups; i++, bis_sync_data += sizeof(_parsed->bis_sync[0])) {
-			_parsed->bis_sync[i] = sys_get_le32(bis_sync_data);
-		}
+		memcpy(&_parsed->bis_sync, &data->data[0], data->data_len);
 		LOG_HEXDUMP_DBG(_parsed->bis_sync, data->data_len, "bis_sync:");
 		return true;
 	default:
