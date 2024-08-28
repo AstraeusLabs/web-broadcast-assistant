@@ -294,6 +294,14 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 
 	case MESSAGE_SUBTYPE_ADD_SOURCE:
 		LOG_DBG("MESSAGE_SUBTYPE_ADD_SOURCE (len %u)", msg_length);
+#if 0 /* TODO: Test. Remove later */
+		parsed_ltv_data.num_subgroups = 5;
+		parsed_ltv_data.bis_sync[0] = 0x0;
+		parsed_ltv_data.bis_sync[1] = 0x2;
+		parsed_ltv_data.bis_sync[2] = 0x0;
+		parsed_ltv_data.bis_sync[3] = 0x0;
+		parsed_ltv_data.bis_sync[4] = 0x0;
+#endif
 		msg_rc = add_source(parsed_ltv_data.adv_sid, parsed_ltv_data.pa_interval,
 				    parsed_ltv_data.broadcast_id, &parsed_ltv_data.addr,
 				    parsed_ltv_data.num_subgroups, parsed_ltv_data.bis_sync);
