@@ -326,6 +326,11 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
 
+	for (int i = 0; i < state->num_subgroups; i++) {
+		LOG_INF("bis_sync[%d]: %x -> %x", i, ba_recv_state.subgroups[i].bis_sync,
+			state->subgroups[i].bis_sync);
+	}
+
 	/* BIG synced? */
 	bis_sync_changed = false;
 	bis_synced = false;
@@ -590,25 +595,7 @@ static bool device_found(struct bt_data *data, void *user_data)
 		memcpy(sr_data->broadcast_name, data->data, MIN(data->data_len, BT_NAME_LEN - 1));
 		return true;
 	case BT_DATA_SVC_DATA16:
-		/* TODO: Test code bolow before enable */
-#if 0
-		/* Check for BASS in Service Data */
-		if (data->data_len >= BT_UUID_SIZE_16) {
-			const struct bt_uuid *uuid;
-			uint16_t u16;
-
-			memcpy(&u16, data->data, sizeof(u16));
-			uuid = BT_UUID_DECLARE_16(sys_le16_to_cpu(u16));
-
-			if (bt_uuid_cmp(uuid, BT_UUID_BASS)) {
-				sr_info->has_bass = true;
-				return true;
-			}
-		}
-#endif /* 0 */
-
-		/* Check for Broadcast ID */
-		if (data->data_len < BT_UUID_SIZE_16 + BT_AUDIO_BROADCAST_ID_SIZE) {
+		if (data->data_len < BT_UUID_SIZE_16) {
 			return true;
 		}
 
@@ -616,11 +603,22 @@ static bool device_found(struct bt_data *data, void *user_data)
 			return true;
 		}
 
-		if (bt_uuid_cmp(&adv_uuid.uuid, BT_UUID_BROADCAST_AUDIO) != 0) {
+		/* Check for BASS */
+		if (bt_uuid_cmp(&adv_uuid.uuid, BT_UUID_BASS) == 0) {
+			sr_data->has_bass = true;
+
 			return true;
 		}
 
-		sr_data->broadcast_id = sys_get_le24(data->data + BT_UUID_SIZE_16);
+		/* Check for Broadcast ID */
+		if (bt_uuid_cmp(&adv_uuid.uuid, BT_UUID_BROADCAST_AUDIO) == 0) {
+			if (data->data_len >= BT_UUID_SIZE_16 + BT_AUDIO_BROADCAST_ID_SIZE) {
+				sr_data->broadcast_id = sys_get_le24(data->data + BT_UUID_SIZE_16);
+			}
+
+			return true;
+		}
+
 		return true;
 	case BT_DATA_UUID16_SOME:
 	case BT_DATA_UUID16_ALL:
@@ -676,6 +674,18 @@ static bool base_search(struct bt_data *data, void *user_data)
 
 	/* Base found */
 	*(bool *)user_data = true;
+
+#if 1 /* TODO: Test. Remove later  */
+	uint32_t bis_indexes = 0U;
+	int subgroup_count;
+
+	subgroup_count = bt_bap_base_get_subgroup_count(base);
+	if (bt_bap_base_get_bis_indexes(base, &bis_indexes)) {
+		LOG_ERR("bt_bap_base_get_bis_indexes error");
+	}
+
+	LOG_INF("BASE found (subgroup_count %d, bis_indexes 0x%08x)", subgroup_count, bis_indexes);
+#endif
 
 	return false;
 }
@@ -1065,7 +1075,7 @@ int connect_to_sink(bt_addr_le_t *bt_addr_le)
 	int err;
 
 	if (ba_sink_conn) {
-		/* Sink already connected. TODO: Support multiple sinks*/
+		/* Sink already connected. TODO: Support multiple sinks */
 		return -EAGAIN;
 	}
 
@@ -1152,6 +1162,7 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	if (ba_num_subgroups == 0) {
 		ba_num_subgroups = 1;
 		subgroup[0].bis_sync = BT_BAP_BIS_SYNC_NO_PREF;
+		LOG_WRN("ba_num_subgroups argument is 0. Change to 1 and set bis sync no pref");
 	}
 
 	bt_addr_le_copy(&param.addr, addr);
