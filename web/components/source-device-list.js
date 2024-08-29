@@ -62,6 +62,7 @@ export class SourceDeviceList extends HTMLElement {
 
 		this.sourceFound = this.sourceFound.bind(this);
 		this.sourceUpdated = this.sourceUpdated.bind(this);
+		this.baseUpdated = this.baseUpdated.bind(this);
 		this.sourceClicked = this.sourceClicked.bind(this);
 
 		const shadowRoot = this.attachShadow({mode: 'open'});
@@ -79,7 +80,7 @@ export class SourceDeviceList extends HTMLElement {
 
 		this.#model.addEventListener('source-found', this.sourceFound);
 		this.#model.addEventListener('source-updated', this.sourceUpdated);
-		this.#model.addEventListener('base-updated', this.sourceUpdated);
+		this.#model.addEventListener('base-updated', this.baseUpdated);
 		this.#model.addEventListener('reset', () => { this.#list.replaceChildren()})
 	}
 
@@ -170,6 +171,20 @@ export class SourceDeviceList extends HTMLElement {
 
 		if (el) {
 			el.refresh();
+		} else {
+			console.warn('source not found!', source);
+		}
+	}
+
+	baseUpdated(evt) {
+		const { source } = evt.detail;
+
+		const items = Array.from(this.#list.querySelectorAll('source-item'));
+
+		const el = items.find(i => i.getModel() === source);
+
+		if (el) {
+			el.baseUpdated();
 		} else {
 			console.warn('source not found!', source);
 		}

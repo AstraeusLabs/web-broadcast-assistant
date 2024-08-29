@@ -13,13 +13,14 @@ import { BT_DataType, bufToAddressString } from '../lib/message.js';
 const template = document.createElement('template');
 template.innerHTML = `
 <style>
-/* Styles go here */
-div {
-	display: block;
+#card {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	row-gap: 5px;
 	position: relative;
 	box-sizing: border-box;
 	min-width: 5.14em;
-	height: 100px;
+	min-height: 100px;
 	margin: 0.2em;
 	background: transparent;
 	text-align: center;
@@ -35,58 +36,73 @@ div {
 }
 
 #name {
-	position: absolute;
-	left: 5px;
-	top: 5px;
 	font-size: 1.2em;
+	text-align: left;
 }
 
 #addr {
-	position: absolute;
-	left: 5px;
-	top: 30px;
+	grid-column: 1 / 3;
 	font-size: 0.9em;
-}
-
-#broadcast_name {
-	position: absolute;
-	top: 5px;
-	font-size: 1.2em;
-}
-
-#broadcast_id {
-	position: absolute;
-	left: 5px;
-	bottom: 5px;
-	font-size: 0.9em;
-}
-
-#rssi {
-	position: absolute;
-	right: 5px;
-	bottom: 5px;
-	font-size: 0.9em;
+	text-align: left;
 }
 
 #base {
-	position: absolute;
-	left: 5px;
-	bottom: 25px;
+	grid-column: 1 / 3;
 	font-size: 0.9em;
+	text-align: left;
+}
+
+#broadcast_name {
+	font-size: 1.2em;
+	text-align: right;
+}
+
+#broadcast_id {
+	font-size: 0.9em;
+	text-align: left;
+}
+
+#rssi {
+	font-size: 0.9em;
+	text-align: right;
 }
 
 #card[state="selected"] {
 	background-color: lightgreen;
 	box-shadow: 1px 1px 2px 2px gray;
 }
+
+.subgroup {
+	border: 1px solid blue;
+	border-radius: 5px;
+	box-sizing: border-box;
+	padding: 8px;
+	color: blue;
+	text-align: left;
+}
+
+.subgroup.selected {
+	background: blue;
+	color: white
+}
+
+#subgroups {
+	display: flex;
+	flex-direction: column;
+	grid-column: 1 / 3;
+	font-size: 0.9em;
+	row-gap: 5px;
+}
+
 </style>
 <div id="card">
 <span id="name"></span>
 <span id="broadcast_name"></span>
+<span id="base">BASE: Pending...</span>
 <span id="addr"></span>
 <span id="broadcast_id"></span>
 <span id="rssi"></span>
-<span id="base">BASE:</span>
+<div id="subgroups"></div>
 </div>
 `;
 
@@ -115,6 +131,7 @@ export class SourceItem extends HTMLElement {
 	#broadcastIdEl
 	#rssiEl
 	#baseEl
+	#subgroupsEl
 
 	constructor() {
 		super();
@@ -134,6 +151,7 @@ export class SourceItem extends HTMLElement {
 		this.#broadcastIdEl = this.shadowRoot?.querySelector('#broadcast_id');
 		this.#rssiEl = this.shadowRoot?.querySelector('#rssi');
 		this.#baseEl = this.shadowRoot?.querySelector('#base');
+		this.#subgroupsEl = this.shadowRoot?.querySelector('#subgroups');
 	}
 
 	baseInfoString(base) {
@@ -144,25 +162,55 @@ export class SourceItem extends HTMLElement {
 		} else {
 			// Subgroups
 			let sg_count = 0;
-			base.subgroups?.forEach(subgroup => {
-				let sg_str = `SG[${sg_count}]:(`;
-				const str_tk = [];
-				const freq = subgroup.codec_data?.find(i => i.name === "SamplingFrequency")?.value;
-				if (freq) {
-					str_tk.push(`Freq: ${freq}Hz`);
-				}
-				str_tk.push(`BIS_CNT=${subgroup.bises?.length || 0}`)
-				sg_str += str_tk.join(', ');
-				sg_str += ")";
-
-				console.log(sg_str);
-				result += sg_str;
-
-				sg_count++;
-			})
+			result += ` ${base.subgroups?.length || 0} subgroup(s) found`;
 		}
 
 		return result;
+	}
+
+	refreshSubgroups(base) {
+		this.#subgroupsEl.innerHTML = '';
+
+		const handleSelectSubgroup = (evt) => {
+			const el = evt.target;
+			base.subgroups?.forEach((subgroup, idx) => {
+				subgroup.isSelected = idx === el.subgroupIdx ? true : false;
+			});
+			// 'Select' item in UI
+			this.#subgroupsEl.querySelectorAll('.subgroup').forEach(sgEl => {
+				sgEl.classList.toggle('selected', el.subgroupIdx === sgEl.subgroupIdx);
+			});
+			evt.stopPropagation();
+		}
+
+		if (!base) {
+			return;
+		} else {
+			base.subgroups?.forEach((subgroup, idx) => {
+				subgroup.isSelected = idx === 0 ? true : false;
+				// find/grab relevant meta & codec cfg info
+				const item = document.createElement('div');
+				item.addEventListener('click', handleSelectSubgroup);
+				item.subgroupIdx = idx;
+				item.classList.add('subgroup');
+				item.classList.toggle('selected', subgroup.isSelected);
+
+				let sg_str = `Subgroup #${idx} (w/${subgroup.bises?.length || 0} BIS):`;
+				const str_tk = [];
+				const freq = subgroup.codec_data?.find(i => i.name === "SamplingFrequency")?.value;
+				if (freq) {
+					str_tk.push(`${freq/1000}KHz`);
+				}
+				const lang = subgroup.codec_meta?.find(i => i.name === "Language")?.value;
+				if (lang) {
+					str_tk.push(`Lang: ${lang}`);
+				}
+				sg_str += str_tk.join(', ');
+
+				item.textContent = sg_str;
+				this.#subgroupsEl.appendChild(item);
+			});
+		}
 	}
 
 	refresh() {
@@ -171,11 +219,16 @@ export class SourceItem extends HTMLElement {
 		this.#broadcastNameEl.textContent = this.#source.broadcast_name;
 		this.#addrEl.textContent = `Addr: ${addrString(this.#source.addr)}`;
 		this.#rssiEl.textContent = `RSSI: ${this.#source.rssi}`;
-		this.#baseEl.textContent = this.baseInfoString(this.#source.base);
 		this.#broadcastIdEl.textContent = `Broadcast ID: 0x${
 			this.#source.broadcast_id?.toString(16).padStart(6, '0').toUpperCase()}`;
 
 		this.#cardEl.setAttribute('state', this.#source.state);
+	}
+
+	baseUpdated() {
+		this.#baseEl.textContent = this.baseInfoString(this.#source.base);
+
+		this.refreshSubgroups(this.#source.base);
 	}
 
 	setModel(source) {

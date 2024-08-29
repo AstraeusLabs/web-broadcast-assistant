@@ -391,6 +391,12 @@ export const tvArrayToLtv = arr => {
 			case BT_DataType.BT_DATA_BROADCAST_CODE:
 			outArr = Array.from(value);	//uint8 array
 			break;
+			case BT_DataType.BT_DATA_BIS_SYNC:
+			outArr = [];
+			value.forEach(v => {
+				outArr.push(...uintToArray(v,4));
+			});
+			break;
 			default:
 			// Don't add fields we don't handle yet
 			continue;
