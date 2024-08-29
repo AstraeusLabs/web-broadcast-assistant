@@ -595,6 +595,31 @@ class AssistantModel extends EventTarget {
 			addr,
 		];
 
+		// If the source has BASE information and there is more than one subgroup,
+		// send 0's for all subgroups except the last, which will be 0xFFFFFFFF (no pref)
+		if (source.base?.subgroups?.length > 1) {
+			const value = [];
+
+			source.base?.subgroups?.forEach(sg => {
+				if (sg.isSelected) {
+					// For each BIS in Subgroup, set bit corresponding to index
+					let bis_sync = 0;
+					sg.bises?.forEach(bis => {
+						if (bis.index) {
+							bis_sync += 1 << (bis.index-1);
+						}
+					})
+					value.push(bis_sync);
+				} else {
+					value.push(0);
+				}
+			});
+
+			tvArr.push({ type: BT_DataType.BT_DATA_BIS_SYNC, value });
+
+			console.log("BIS SYNC TO", value);
+		}
+
 		const payload = tvArrayToLtv(tvArr);
 
 		console.log('Add Source payload', payload)
