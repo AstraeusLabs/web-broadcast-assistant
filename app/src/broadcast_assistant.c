@@ -1163,6 +1163,10 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 		ba_num_subgroups = 1;
 		subgroup[0].bis_sync = BT_BAP_BIS_SYNC_NO_PREF;
 		LOG_WRN("ba_num_subgroups argument is 0. Change to 1 and set bis sync no pref");
+	} else {
+		for (int i = 0; i < ba_num_subgroups; i++) {
+			LOG_INF("bis_sync[%d]: %x", i, subgroup[i].bis_sync);
+		}
 	}
 
 	bt_addr_le_copy(&param.addr, addr);
