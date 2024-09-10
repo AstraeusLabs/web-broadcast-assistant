@@ -289,13 +289,19 @@ const parseMetaLTVItem = (type, len, value) => {
 	const item = { type, name };
 	// For now, just parse the ones we know
 	switch (type) {
+                case BT_Meta.PreferredAudioContexts:
 		case BT_Meta.StreamingAudioContexts:
                 item.value = getIntAt(value, 0, 2);
 		break;
+                case BT_Meta.ProgramInfo:
 		case BT_Meta.Language:
                 const decoder = new TextDecoder();
                 item.value = decoder.decode(value);
 		break;
+                case BT_Meta.CCIDList:
+                // For now, just grab and store the complete byte array as is
+                item.value = Array.from(value);
+                break;
 		default:
 		item.value = "UNHANDLED";
 		break;
