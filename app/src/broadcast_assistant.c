@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(broadcast_assistant, LOG_LEVEL_INF);
 #define PA_SYNC_SKIP                      5
 #define PA_SYNC_INTERVAL_TO_TIMEOUT_RATIO 20 /* Set the timeout relative to interval */
 
-#define MAX_NUMBER_OF_SOURCES 20
+#define MAX_NUMBER_OF_SOURCES 30
 
 typedef struct source_data {
 	bt_addr_le_t addr;
@@ -107,6 +107,21 @@ static struct bt_bap_scan_delegator_recv_state ba_recv_state = {0};
 /*
  * Private functions
  */
+static void pa_sync_create_timeout_work_handler(struct k_work *work)
+{
+	LOG_WRN("PA sync create timeout");
+	k_work_submit(&pa_sync_delete_work);
+	pa_syncing = false;
+}
+
+K_WORK_DEFINE(pa_sync_create_timeout_work, pa_sync_create_timeout_work_handler);
+
+static void pa_sync_create_timeout_handler(struct k_timer *dummy)
+{
+    k_work_submit(&pa_sync_create_timeout_work);
+}
+
+K_TIMER_DEFINE(pa_sync_create_timer, pa_sync_create_timeout_handler, NULL);
 
 static void pa_sync_delete(struct k_work *work)
 {
@@ -143,7 +158,7 @@ static void source_data_add(const bt_addr_le_t *addr)
 	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
 	for (i = 0; i < source_data_list.num; i++) {
 		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0) {
-			LOG_INF("Source already added (%s)", addr_str);
+			LOG_DBG("Source already added (%s)", addr_str);
 			new_source = false;
 			break;
 		}
@@ -694,6 +709,8 @@ static void pa_synced_cb(struct bt_le_per_adv_sync *sync,
 			 struct bt_le_per_adv_sync_synced_info *info)
 {
 	LOG_INF("PA sync %p synced", (void *)sync);
+
+	k_timer_stop(&pa_sync_create_timer);
 }
 
 static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
@@ -746,7 +763,7 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 static void pa_term_cb(struct bt_le_per_adv_sync *sync,
 		       const struct bt_le_per_adv_sync_term_info *info)
 {
-	LOG_INF("PA terminated %p", (void *)sync);
+	LOG_INF("PA terminated %p %u", (void *)sync, info->reason);
 }
 
 static void pa_biginfo_cb(struct bt_le_per_adv_sync *sync, const struct bt_iso_biginfo *biginfo)
@@ -824,6 +841,12 @@ static int pa_sync_create(const struct bt_le_scan_recv_info *info)
 	per_adv_sync_param.skip = PA_SYNC_SKIP;
 	per_adv_sync_param.timeout = interval_to_sync_timeout(info->interval);
 
+	uint16_t create_timeout_duration_ms;
+
+	create_timeout_duration_ms = per_adv_sync_param.timeout * 10U;
+	LOG_INF("PA sync create timeout set to %u ms", create_timeout_duration_ms);
+	k_timer_start(&pa_sync_create_timer, K_MSEC(create_timeout_duration_ms), K_NO_WAIT);
+
 	return bt_le_per_adv_sync_create(&per_adv_sync_param, &pa_sync);
 }
 
@@ -842,13 +865,14 @@ static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_
 	bt_data_parse(ad, device_found, (void *)sr_data);
 
 	if (sr_data->broadcast_id != INVALID_BROADCAST_ID) {
-		LOG_INF("Broadcast Source Found [name, b_name, b_id] = [\"%s\", \"%s\", 0x%06x]",
+		LOG_DBG("Broadcast Source Found [name, b_name, b_id] = [\"%s\", \"%s\", 0x%06x]",
 			sr_data->bt_name, sr_data->broadcast_name, sr_data->broadcast_id);
 
 		source_data_add(info->addr);
 
 		if (!pa_syncing && !source_data_get_pa_recv(info->addr)) {
-			LOG_INF("PA sync create (b_id = 0x%06x)", sr_data->broadcast_id);
+			LOG_INF("PA sync create (b_id = 0x%06x, \"%s\")", sr_data->broadcast_id,
+				sr_data->broadcast_name);
 			int err = pa_sync_create(info);
 			if (err != 0) {
 				LOG_INF("Could not create Broadcast PA sync: %d", err);
