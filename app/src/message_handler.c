@@ -310,7 +310,7 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 
 	case MESSAGE_SUBTYPE_REMOVE_SOURCE:
 		LOG_DBG("MESSAGE_SUBTYPE_REMOVE_SOURCE (len %u)", msg_length);
-		msg_rc = remove_source();
+		msg_rc = remove_source(parsed_ltv_data.src_id, parsed_ltv_data.num_subgroups);
 		send_response(MESSAGE_SUBTYPE_REMOVE_SOURCE, msg_seq_no, msg_rc);
 		break;
 
