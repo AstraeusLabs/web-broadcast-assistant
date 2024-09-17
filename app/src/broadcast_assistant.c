@@ -60,8 +60,8 @@ static void broadcast_assistant_recv_state_removed_cb(struct bt_conn *conn, uint
 static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err);
 static void broadcast_assistant_mod_src_cb(struct bt_conn *conn, int err);
 static void broadcast_assistant_rem_src_cb(struct bt_conn *conn, int err);
-static void connected(struct bt_conn *conn, uint8_t err);
-static void disconnected(struct bt_conn *conn, uint8_t reason);
+static void connected_cb(struct bt_conn *conn, uint8_t err);
+static void disconnected_cb(struct bt_conn *conn, uint8_t reason);
 static void security_changed_cb(struct bt_conn *conn, bt_security_t level,
 				enum bt_security_err err);
 static void identity_resolved_cb(struct bt_conn *conn,
@@ -91,18 +91,16 @@ static struct bt_bap_broadcast_assistant_cb broadcast_assistant_callbacks = {
 };
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {
-	.connected = connected,
-	.disconnected = disconnected,
+	.connected = connected_cb,
+	.disconnected = disconnected_cb,
 	.security_changed = security_changed_cb,
 	.identity_resolved = identity_resolved_cb
 };
 
-static struct bt_conn *ba_sink_conn; /* TODO: Make a list of sinks */
-static uint8_t ba_scan_target;
+static uint8_t ba_scan_target; /* scan state */
 static uint32_t ba_source_broadcast_id;
 static uint8_t ba_source_id; /* Source ID of the receive state */
-static uint8_t ba_num_subgroups;
-static struct bt_bap_scan_delegator_recv_state ba_recv_state = {0};
+static struct bt_bap_scan_delegator_recv_state ba_recv_state[CONFIG_BT_MAX_CONN] = {0};
 
 /*
  * Private functions
@@ -110,8 +108,10 @@ static struct bt_bap_scan_delegator_recv_state ba_recv_state = {0};
 static void pa_sync_create_timeout_work_handler(struct k_work *work)
 {
 	LOG_WRN("PA sync create timeout");
-	k_work_submit(&pa_sync_delete_work);
-	pa_syncing = false;
+	if (pa_syncing) {
+		k_work_submit(&pa_sync_delete_work);
+		pa_syncing = false;
+	}
 }
 
 K_WORK_DEFINE(pa_sync_create_timeout_work, pa_sync_create_timeout_work_handler);
@@ -220,6 +220,8 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 		return; /* return and wait for disconnected callback (assume no err) */
 	}
 
+	bt_conn_unref(conn); /* TODO: Why is this needed? */
+
 	/* Succesful connected to sink */
 	evt_msg = message_alloc_tx_message();
 	bt_addr_le = bt_conn_get_dst(conn);
@@ -250,10 +252,14 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 	bool bis_synced;
 	bool bis_sync_changed;
 
-	LOG_INF("Broadcast assistant recv_state callback (%p, %d, %u)", (void *)conn, err, state->src_id);
+	uint8_t conn_index = bt_conn_index(conn);
 
-	if (state->encrypt_state != ba_recv_state.encrypt_state) {
-		LOG_INF("Going from encrypt state %u to %u", ba_recv_state.encrypt_state, state->encrypt_state);
+	LOG_INF("Broadcast assistant recv_state callback (%p (%u), %d, %u)", (void *)conn,
+		conn_index, err, state->src_id);
+
+	if (state->encrypt_state != ba_recv_state[conn_index].encrypt_state) {
+		LOG_INF("Going from encrypt state %u to %u",
+			ba_recv_state[conn_index].encrypt_state, state->encrypt_state);
 
 		switch (state->encrypt_state) {
 		case BT_BAP_BIG_ENC_STATE_NO_ENC:
@@ -294,8 +300,9 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
 
-	if (state->pa_sync_state != ba_recv_state.pa_sync_state) {
-		LOG_INF("Going from PA state %u to %u", ba_recv_state.pa_sync_state, state->pa_sync_state);
+	if (state->pa_sync_state != ba_recv_state[conn_index].pa_sync_state) {
+		LOG_INF("Going from PA state %u to %u", ba_recv_state[conn_index].pa_sync_state,
+			state->pa_sync_state);
 
 		switch (state->pa_sync_state) {
 		case BT_BAP_PA_STATE_NOT_SYNCED:
@@ -308,7 +315,6 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 			break;
 		case BT_BAP_PA_STATE_SYNCED:
 			LOG_INF("BT_BAP_PA_STATE_SYNCED (src_id = %u)", state->src_id);
-			ba_source_id = state->src_id; /* store source ID of the receive state */
 			evt_msg_sub_type = MESSAGE_SUBTYPE_NEW_PA_STATE_SYNCED;
 			break;
 		case BT_BAP_PA_STATE_FAILED:
@@ -342,7 +348,8 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 	}
 
 	for (int i = 0; i < state->num_subgroups; i++) {
-		LOG_INF("bis_sync[%d]: %x -> %x", i, ba_recv_state.subgroups[i].bis_sync,
+		LOG_INF("bis_sync[%d]: %x -> %x", i,
+			ba_recv_state[conn_index].subgroups[i].bis_sync,
 			state->subgroups[i].bis_sync);
 	}
 
@@ -350,7 +357,8 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 	bis_sync_changed = false;
 	bis_synced = false;
 	for (int i = 0; i < state->num_subgroups; i++) {
-		if (state->subgroups[i].bis_sync != ba_recv_state.subgroups[i].bis_sync) {
+		if (state->subgroups[i].bis_sync !=
+		    ba_recv_state[conn_index].subgroups[i].bis_sync) {
 			/* bis sync changed */
 			bis_sync_changed = true;
 			if (state->subgroups[i].bis_sync == BIG_SYNC_FAILED) {
@@ -362,7 +370,8 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 				bis_synced = false;
 				break;
 			}
-			bis_synced = bis_synced || (state->subgroups[i].bis_sync == 0 ? false : true);
+			bis_synced =
+				bis_synced || (state->subgroups[i].bis_sync == 0 ? false : true);
 		}
 	}
 
@@ -393,7 +402,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 	}
 
 	/* Store latest recv_state */
-	memcpy(&ba_recv_state, state, sizeof(struct bt_bap_scan_delegator_recv_state));
+	memcpy(&ba_recv_state[conn_index], state, sizeof(struct bt_bap_scan_delegator_recv_state));
 }
 
 static void broadcast_assistant_recv_state_removed_cb(struct bt_conn *conn, uint8_t src_id)
@@ -408,10 +417,14 @@ static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err)
 	char addr_str[BT_ADDR_LE_STR_LEN];
 	struct net_buf *evt_msg;
 
-	LOG_INF("Broadcast assistant add_src callback (%p, %d)", (void *)conn, err);
+	if (err) {
+		LOG_ERR("Broadcast assistant add_src callback (%p, %d)", (void *)conn, err);
+	} else {
+		LOG_INF("Broadcast assistant add_src callback (%p, %d)", (void *)conn, err);
+	}
 
 	evt_msg = message_alloc_tx_message();
-	bt_addr_le = bt_conn_get_dst(ba_sink_conn); /* sink addr */
+	bt_addr_le = bt_conn_get_dst(conn); /* sink addr */
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
 	LOG_DBG("Source added for %s", addr_str);
 
@@ -451,16 +464,12 @@ static void broadcast_assistant_mod_src_cb(struct bt_conn *conn, int err)
 static void broadcast_assistant_rem_src_cb(struct bt_conn *conn, int err)
 {
 	LOG_INF("BASS remove source (err: %d)", err);
-	ba_source_id = 0;
 }
 
-static void connected(struct bt_conn *conn, uint8_t err)
+static void connected_cb(struct bt_conn *conn, uint8_t err)
 {
 	LOG_INF("Broadcast assistant connected callback (%p, err:%d)", (void *)conn, err);
 
-	if (conn != ba_sink_conn) {
-		return;
-	}
 	if (err) {
 		const bt_addr_le_t *bt_addr_le;
 		struct net_buf *evt_msg;
@@ -479,8 +488,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		net_buf_add_u8(evt_msg, BT_DATA_ERROR_CODE);
 		net_buf_add_le32(evt_msg, err);
 
-		bt_conn_unref(ba_sink_conn);
-		ba_sink_conn = NULL;
+		bt_conn_unref(conn);
 
 		send_net_buf_event(MESSAGE_SUBTYPE_SINK_CONNECTED, evt_msg);
 		restart_scanning_if_needed();
@@ -491,19 +499,14 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	if (err) {
 		LOG_ERR("Setting security failed (err %d)", err);
 	}
-
 }
 
-static void disconnected(struct bt_conn *conn, uint8_t reason)
+static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 {
 	const bt_addr_le_t *bt_addr_le;
 	struct net_buf *evt_msg;
 
 	LOG_INF("Broadcast assistant disconnected callback (%p, reason:%d)", (void *)conn, reason);
-
-	if (conn != ba_sink_conn) {
-		return;
-	}
 
 	bt_addr_le = bt_conn_get_dst(conn);
 	evt_msg = message_alloc_tx_message();
@@ -517,8 +520,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	net_buf_add_u8(evt_msg, BT_DATA_ERROR_CODE);
 	net_buf_add_le32(evt_msg, 0 /* OK */);
 
-	bt_conn_unref(ba_sink_conn);
-	ba_sink_conn = NULL;
+	bt_conn_unref(conn);
 
 	send_net_buf_event(MESSAGE_SUBTYPE_SINK_DISCONNECTED, evt_msg);
 }
@@ -527,19 +529,25 @@ static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum 
 {
 	LOG_INF("Broadcast assistant security_changed callback (%p, %d, err:%d)", (void *)conn, level, err);
 
-
-	/* Connected. Do BAP broadcast assistant discover */
-	LOG_INF("Broadcast assistant discover");
-	err = bt_bap_broadcast_assistant_discover(ba_sink_conn);
-	if (err) {
-		LOG_ERR("Broadcast assistant discover (err %d)", err);
-		err = bt_conn_disconnect(ba_sink_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	if (err == BT_SECURITY_ERR_SUCCESS) {
+		/* Connected and paired. Do BAP broadcast assistant discover */
+		LOG_INF("Broadcast assistant discover...");
+		err = bt_bap_broadcast_assistant_discover(conn);
+		if (err) {
+			LOG_ERR("Failed to broadcast assistant discover (err %d)", err);
+			err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+			if (err) {
+				LOG_ERR("Failed to disconnect (err %d)", err);
+			}
+			restart_scanning_if_needed();
+		}
+	} else {
+		LOG_ERR("Failed to change security (err %d)", err);
+		err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		if (err) {
 			LOG_ERR("Failed to disconnect (err %d)", err);
 		}
 		restart_scanning_if_needed();
-
-		return; /* return and wait for disconnected callback (assume no err) */
 	}
 }
 
@@ -690,7 +698,7 @@ static bool base_search(struct bt_data *data, void *user_data)
 	/* Base found */
 	*(bool *)user_data = true;
 
-#if 1 /* TODO: Test. Remove later  */
+#if 1 /* TODO: Test. Remove later */
 	uint32_t bis_indexes = 0U;
 	int subgroup_count;
 
@@ -754,6 +762,7 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 
 		if (pa_syncing) {
 			LOG_INF("Delete PA sync");
+			k_timer_stop(&pa_sync_create_timer);
 			k_work_submit(&pa_sync_delete_work);
 			pa_syncing = false;
 		}
@@ -1052,6 +1061,7 @@ int stop_scanning(void)
 
 	if (pa_syncing) {
 		LOG_INF("Delete PA sync");
+		k_timer_stop(&pa_sync_create_timer);
 		k_work_submit(&pa_sync_delete_work);
 		pa_syncing = false;
 	}
@@ -1095,13 +1105,11 @@ int disconnect_unpair_all(void)
 
 int connect_to_sink(bt_addr_le_t *bt_addr_le)
 {
+	struct bt_conn *conn;
 	char addr_str[BT_ADDR_LE_STR_LEN];
 	int err;
-
-	if (ba_sink_conn) {
-		/* Sink already connected. TODO: Support multiple sinks */
-		return -EAGAIN;
-	}
+	const struct bt_le_conn_param *param =
+		BT_LE_CONN_PARAM(BT_GAP_INIT_CONN_INT_MIN, BT_GAP_INIT_CONN_INT_MAX, 0, 800);
 
 	/* Stop scanning if needed */
 	if (ba_scan_target) {
@@ -1116,8 +1124,7 @@ int connect_to_sink(bt_addr_le_t *bt_addr_le)
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
 	LOG_INF("Connecting to %s...", addr_str);
 
-	err = bt_conn_le_create(bt_addr_le, BT_CONN_LE_CREATE_CONN, BT_LE_CONN_PARAM_DEFAULT,
-				&ba_sink_conn);
+	err = bt_conn_le_create(bt_addr_le, BT_CONN_LE_CREATE_CONN, param, &conn);
 	if (err) {
 		LOG_ERR("Failed creating connection (err=%d)", err);
 		restart_scanning_if_needed();
@@ -1125,23 +1132,25 @@ int connect_to_sink(bt_addr_le_t *bt_addr_le)
 		return err;
 	}
 
+	LOG_INF("Conn = %p (idx = %u)", (void *)conn, bt_conn_index(conn));
+
 	return 0;
 }
 
 int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 {
+	struct bt_conn *conn;
 	char addr_str[BT_ADDR_LE_STR_LEN];
 
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
-	LOG_INF("Disconnecting from %s...", addr_str);
+	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le);
 
-	/* TODO: Support multiple sinks. Search for conn to disconnect via
-	 * bt_conn_foreach(BT_CONN_TYPE_LE, disconnect, NULL).
-	 */
-	if (ba_sink_conn) {
+	LOG_INF("Disconnecting from %s %p...", addr_str, (void *)conn);
+
+	if (conn) {
 		int err;
 
-		err = bt_conn_disconnect(ba_sink_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		if (err) {
 			struct net_buf *evt_msg;
 
@@ -1159,36 +1168,53 @@ int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 
 			send_net_buf_event(MESSAGE_SUBTYPE_SINK_DISCONNECTED, evt_msg);
 		}
+
+		err = bt_unpair(BT_ID_DEFAULT, bt_addr_le);
+		if (err) {
+			LOG_ERR("bt_unpair failed with %d", err);
+		}
 	}
 
 	return 0;
 }
 
+static void add_source_foreach_sink(struct bt_conn *conn, void *data)
+{
+	int err;
+
+	const struct bt_bap_broadcast_assistant_add_src_param *param =
+		(struct bt_bap_broadcast_assistant_add_src_param *)data;
+
+	LOG_INF("Adding broadcast source for this conn %p ...", (void *)conn);
+
+	err = bt_bap_broadcast_assistant_add_src(conn, param);
+	if (err) {
+		LOG_ERR("Failed to add source (err %d)", err);
+	}
+}
+
 int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr_le_t *addr,
 	       uint8_t num_subgroups, uint32_t *bis_sync)
 {
-	LOG_INF("Adding broadcast source...");
+	LOG_INF("Adding broadcast source (%u)...", broadcast_id);
 
 	struct bt_bap_bass_subgroup subgroup[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS] = {{0}};
 	struct bt_bap_broadcast_assistant_add_src_param param = {0};
-	int err = 0;
 
 	/* Clear recv_state */
-	memset(&ba_recv_state, 0, sizeof(ba_recv_state));
+	memset(ba_recv_state, 0, sizeof(ba_recv_state));
 
-	/* keep number of subgroups as global variable */
-	ba_num_subgroups = MIN(num_subgroups, CONFIG_BT_BAP_BASS_MAX_SUBGROUPS);
-	for (int i = 0; i < ba_num_subgroups; i++) {
+	num_subgroups = MIN(num_subgroups, CONFIG_BT_BAP_BASS_MAX_SUBGROUPS);
+	for (int i = 0; i < num_subgroups; i++) {
 		subgroup[i].bis_sync = bis_sync[i];
 	}
 
-	/* TODO: Remove if case below when web part supports number of subgroups */
-	if (ba_num_subgroups == 0) {
-		ba_num_subgroups = 1;
+	if (num_subgroups == 0) {
+		num_subgroups = 1;
 		subgroup[0].bis_sync = BT_BAP_BIS_SYNC_NO_PREF;
-		LOG_WRN("ba_num_subgroups argument is 0. Change to 1 and set bis sync no pref");
+		LOG_WRN("num_subgroups argument is 0. Change to 1 and set bis sync no pref");
 	} else {
-		for (int i = 0; i < ba_num_subgroups; i++) {
+		for (int i = 0; i < num_subgroups; i++) {
 			LOG_INF("bis_sync[%d]: %x", i, subgroup[i].bis_sync);
 		}
 	}
@@ -1199,84 +1225,101 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	param.broadcast_id = broadcast_id;
 	param.pa_sync = true;
 
-	/* keep broadcast_id as global variable */
+	/* keep broadcast_id as global variable (used by source added callback) */
 	ba_source_broadcast_id = broadcast_id;
 
 	LOG_INF("adv_sid = %u, pa_interval = %u, broadcast_id = 0x%08x, num_subgroups = %u",
-		param.adv_sid, param.pa_interval, param.broadcast_id, ba_num_subgroups);
+		param.adv_sid, param.pa_interval, param.broadcast_id, num_subgroups);
 
-	param.num_subgroups = ba_num_subgroups;
+	param.num_subgroups = num_subgroups;
 	param.subgroups = subgroup;
 
-	if (!ba_sink_conn) {
-		LOG_INF("No sink connected!");
-		return -ENOTCONN;
-	}
-
-	err = bt_bap_broadcast_assistant_add_src(ba_sink_conn, &param);
-	if (err) {
-		LOG_ERR("Failed to add source (err %d)", err);
-		return err;
-	}
+	bt_conn_foreach(BT_CONN_TYPE_LE, add_source_foreach_sink, &param);
 
 	return 0;
 }
 
-int remove_source()
+static void remove_source_foreach_sink(struct bt_conn *conn, void *data)
 {
-	LOG_INF("Removing broadcast source...");
+	int err;
 
-	struct bt_bap_bass_subgroup subgroup[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS] = {{0}}; /* bis_sync = 0 */
-	struct bt_bap_broadcast_assistant_mod_src_param param = { 0 };
-	int err = 0;
+	const struct bt_bap_broadcast_assistant_mod_src_param *param =
+		(struct bt_bap_broadcast_assistant_mod_src_param *)data;
 
-	param.src_id = ba_source_id;
-	param.pa_sync = false; /* stop sync to periodic advertisements */
-	param.pa_interval = BT_BAP_PA_INTERVAL_UNKNOWN;
-	param.num_subgroups = ba_num_subgroups;
-	param.subgroups = subgroup;
+	LOG_INF("Removing broadcast source for this conn %p ...", (void *)conn);
 
-	if (!ba_sink_conn) {
-		LOG_INF("No sink connected!");
-		return -ENOTCONN;
-	}
-
-	err = bt_bap_broadcast_assistant_mod_src(ba_sink_conn, &param);
+	err = bt_bap_broadcast_assistant_mod_src(conn, param);
 	if (err) {
 		LOG_ERR("Failed to modify source (err %d)", err);
-		return err;
 	}
+}
+
+int remove_source(uint8_t source_id, uint8_t num_subgroups)
+{
+	LOG_INF("Removing broadcast source (%u, %u)...", source_id, num_subgroups);
+
+	struct bt_bap_bass_subgroup subgroup[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS] = {
+		{0}}; /* bis_sync = 0 */
+	struct bt_bap_broadcast_assistant_mod_src_param param = {0};
+
+	num_subgroups = MIN(num_subgroups, CONFIG_BT_BAP_BASS_MAX_SUBGROUPS);
+	if (num_subgroups == 0) {
+		num_subgroups = 1;
+		LOG_WRN("num_subgroups argument is 0. Change to 1");
+	}
+	param.src_id = source_id;
+	param.pa_sync = false; /* stop sync to periodic advertisements */
+	param.pa_interval = BT_BAP_PA_INTERVAL_UNKNOWN;
+	param.num_subgroups = num_subgroups;
+	param.subgroups = subgroup;
+
+	/* store source ID globally. Used by broadcast_assistant_mod_src_cb */
+	ba_source_id = source_id;
+
+	/* FIXME: Incase source id is not the same foreach sink then this will not work */
+	bt_conn_foreach(BT_CONN_TYPE_LE, remove_source_foreach_sink, &param);
 
 	return 0;
+}
+
+typedef struct add_broadcast_code_data {
+	uint8_t src_id;
+	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
+} add_broadcast_code_data_t;
+
+static void add_broadcast_code_foreach_sink(struct bt_conn *conn, void *data)
+{
+	int err;
+
+	add_broadcast_code_data_t *add_broadcast_code_data = (add_broadcast_code_data_t *)data;
+
+	LOG_INF("Adding broadcast code for this conn %p ...", (void *)conn);
+
+	err = bt_bap_broadcast_assistant_set_broadcast_code(
+		conn, add_broadcast_code_data->src_id, add_broadcast_code_data->broadcast_code);
+	if (err) {
+		LOG_ERR("Failed to add broadcast code (err %d)", err);
+	}
 }
 
 int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE])
 {
+	add_broadcast_code_data_t add_broadcast_code_data;
+
 	LOG_INF("Adding broadcast code for src %u ...", src_id);
 	LOG_HEXDUMP_INF(broadcast_code, BT_AUDIO_BROADCAST_CODE_SIZE, "broadcast code:");
 
-	int err = 0;
+	add_broadcast_code_data.src_id = src_id;
+	memcpy(add_broadcast_code_data.broadcast_code, broadcast_code, BT_AUDIO_BROADCAST_CODE_SIZE);
 
-	if (!ba_sink_conn) {
-		LOG_INF("No sink connected!");
-		return -ENOTCONN;
-	}
-
-	/* TODO: Use src_id */
-	err = bt_bap_broadcast_assistant_set_broadcast_code(ba_sink_conn, ba_source_id,
-							    broadcast_code);
-	if (err) {
-		LOG_ERR("Failed to add broadcast code (err %d)", err);
-		return err;
-	}
+	/* FIXME: Incase source id is not the same foreach sink then this will not work */
+	bt_conn_foreach(BT_CONN_TYPE_LE, add_broadcast_code_foreach_sink, &add_broadcast_code_data);
 
 	return 0;
 }
 
 int broadcast_assistant_init(void)
 {
-	ba_sink_conn = NULL;
-
 	k_work_init(&pa_sync_delete_work, &pa_sync_delete);
 
 	int err = bt_enable(NULL);
