@@ -104,7 +104,7 @@ export class SourceDeviceList extends HTMLElement {
 		console.log('Source clicked:', sourceEl.getModel());
 
 		if (source.state === "selected") {
-			this.#model.removeSource();
+			this.#model.removeSource(source);
 		} else {
 			this.#model.addSource(source);
 		}

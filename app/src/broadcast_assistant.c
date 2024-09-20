@@ -344,6 +344,11 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		net_buf_add_u8(evt_msg, BT_DATA_BROADCAST_ID);
 		net_buf_add_le32(evt_msg, state->broadcast_id);
 
+		/* source id */
+		net_buf_add_u8(evt_msg, 2);
+		net_buf_add_u8(evt_msg, BT_DATA_SOURCE_ID);
+		net_buf_add_u8(evt_msg, state->src_id);
+
 		send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
 
@@ -397,6 +402,11 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		net_buf_add_u8(evt_msg, 5);
 		net_buf_add_u8(evt_msg, BT_DATA_BROADCAST_ID);
 		net_buf_add_le32(evt_msg, state->broadcast_id);
+
+		/* source id */
+		net_buf_add_u8(evt_msg, 2);
+		net_buf_add_u8(evt_msg, BT_DATA_SOURCE_ID);
+		net_buf_add_u8(evt_msg, state->src_id);
 
 		send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
