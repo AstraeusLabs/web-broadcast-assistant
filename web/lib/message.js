@@ -283,7 +283,8 @@ const parseLTVItem = (type, len, value) => {
 		break;
 		case BT_DataType.BT_DATA_RSSI:
 		case BT_DataType.BT_DATA_ERROR_CODE:
-		item.value = bufToInt(value, true);
+		case BT_DataType.BT_DATA_SOURCE_ID:
+			item.value = bufToInt(value, true);
 		break;
 		case BT_DataType.BT_DATA_BROADCAST_ID:
 		case BT_DataType.BT_DATA_PA_INTERVAL:
@@ -386,6 +387,7 @@ export const tvArrayToLtv = arr => {
 			outArr = uintToArray(value, 2); //uint16
 			break;
 			case BT_DataType.BT_DATA_SID:
+			case BT_DataType.BT_DATA_SOURCE_ID:
 			outArr = uintToArray(value, 1);	//uint8
 			break;
 			case BT_DataType.BT_DATA_BROADCAST_CODE:

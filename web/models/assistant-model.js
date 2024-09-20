@@ -235,6 +235,10 @@ class AssistantModel extends EventTarget {
 			BT_DataType.BT_DATA_BROADCAST_ID
 		])?.value
 
+		const source_id = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_SOURCE_ID
+		])?.value
+
 		// If device already exists, just update RSSI, otherwise add to list
 		let sink = this.#sinks.find(i => compareTypedArray(i.addr.value.addr, sink_addr.value.addr));
 		if (!sink) {
@@ -255,7 +259,15 @@ class AssistantModel extends EventTarget {
 			this.dispatchEvent(new CustomEvent('source-updated', {detail: { source: s }}));
 		});
 
-		sink.source_added = source;
+		if (isSynced) {
+			sink.source_added = source;
+			sink.synced_source_id = source_id;
+			console.log(`Sink '${sink.name} synced to source '${source.name}/${source.broadcast_name}' with source_id=${source_id}`)
+		} else {
+			sink.source_added = undefined;
+			sink.synced_source_id = undefined;
+		}
+
 		this.dispatchEvent(new CustomEvent('sink-updated', {detail: { sink }}));
 	}
 
@@ -465,11 +477,11 @@ class AssistantModel extends EventTarget {
 			break;
 			case MessageSubType.SOURCE_BIG_ENC_BCODE_REQ:
 			console.log('Add broadcast code');
-			this.getBroadcastCode();
+			this.getBroadcastCode(message);
 			break;
 			case MessageSubType.SOURCE_BIG_ENC_NO_BAD_CODE:
 			console.log('No/Bad broadcast code');
-			this.getBroadcastCode();
+			this.getBroadcastCode(message);
 			break;
 			default:
 			console.log(`Missing handler for EVT subType 0x${message.subType.toString(16)}`);
@@ -597,7 +609,7 @@ class AssistantModel extends EventTarget {
 
 		// If the source has BASE information and there is more than one subgroup,
 		// send 0's for all subgroups except the last, which will be 0xFFFFFFFF (no pref)
-		if (source.base?.subgroups?.length > 1) {
+		if (source.base?.subgroups?.length) {
 			const value = [];
 
 			source.base?.subgroups?.forEach(sg => {
@@ -634,8 +646,42 @@ class AssistantModel extends EventTarget {
 		this.#service.sendCMD(message);
 	}
 
-	getBroadcastCode() {
+	getBroadcastCode(message) {
 		console.log("Query for Broadcast Code");
+
+		const payloadArray = ltvToTvArray(message.payload);
+
+		console.log(payloadArray);
+
+		const sink_addr = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_IDENTITY,
+			BT_DataType.BT_DATA_RPA
+		]);
+
+		if (!sink_addr) {
+			// TBD: Throw exception?
+			return;
+		}
+
+		const err = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_ERROR_CODE
+		])?.value;
+
+		const broadcast_id = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_BROADCAST_ID
+		])?.value
+
+		const source_id = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_SOURCE_ID
+		])?.value
+
+		let sink = this.#sinks.find(i => compareTypedArray(i.addr.value.addr, sink_addr.value.addr));
+		if (!sink) {
+			console.warn("BCODE request w/ unknown sink addr:", sink_addr);
+			return;
+		}
+
+		console.log(`BCODE request: Sink=${sink.name}, source_id=${source_id}`);
 
 		this.dispatchEvent(new CustomEvent('bc-request'));
 	}
@@ -644,7 +690,7 @@ class AssistantModel extends EventTarget {
 		console.log("Sending Broadcast Code CMD");
 
 		const tvArr = [
-			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: 0 },
+			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: 1 }, // Hardcoded for now. This should be grabbed from the sync message
 			{ type: BT_DataType.BT_DATA_BROADCAST_CODE, value: arr },
 		];
 
@@ -662,15 +708,29 @@ class AssistantModel extends EventTarget {
 		this.#service.sendCMD(message);
 	}
 
-	removeSource() {
+	removeSource(source) {
 		// TODO: support selecting sink in web and firmware.
 		//       for now FW removes on connected sink(s)
 		console.log("Sending Remove Source CMD");
 
+		const tvArr = [
+			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: 1 } // Hardcoded for now. This should be grabbed from the sync message
+		];
+
+		// If there are multiple subgroups on the synced source, add array of zeros (len=num subgroups)
+		if (source.base?.subgroups?.length) {
+			tvArr.push({ type: BT_DataType.BT_DATA_BIS_SYNC, value: new Array(source.base?.subgroups?.length).fill(0) });
+		}
+
+		const payload = tvArrayToLtv(tvArr);
+
+		console.log('tvArr and payload', tvArr, payload);
+
 		const message = {
 			type: Number(MessageType.CMD),
 			subType: MessageSubType.REMOVE_SOURCE,
-			seqNo: 123
+			seqNo: 123,
+			payload
 		};
 
 		this.#service.sendCMD(message);
