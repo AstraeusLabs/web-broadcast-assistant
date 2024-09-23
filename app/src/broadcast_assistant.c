@@ -52,6 +52,9 @@ static volatile bool pa_syncing;
 
 static struct k_work pa_sync_delete_work;
 
+static K_SEM_DEFINE(sem_rem_source, 1U, 1U);
+static K_SEM_DEFINE(sem_add_source, 1U, 1U);
+
 static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err,
 					    uint8_t recv_state_count);
 static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
@@ -123,7 +126,7 @@ static void pa_sync_create_timeout_handler(struct k_timer *dummy)
 
 K_TIMER_DEFINE(pa_sync_create_timer, pa_sync_create_timeout_handler, NULL);
 
-static void pa_sync_delete(struct k_work *work)
+static void pa_sync_delete_handler(struct k_work *work)
 {
 	int err;
 
@@ -433,6 +436,8 @@ static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err)
 		LOG_INF("Broadcast assistant add_src callback (%p, %d)", (void *)conn, err);
 	}
 
+	k_sem_give(&sem_add_source);
+
 	evt_msg = message_alloc_tx_message();
 	bt_addr_le = bt_conn_get_dst(conn); /* sink addr */
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
@@ -463,7 +468,8 @@ static void broadcast_assistant_mod_src_cb(struct bt_conn *conn, int err)
 		return;
 	}
 
-	LOG_INF("BASS modify source (bis_sync = 0, pa_sync = false) ok -> Now remove source");
+	LOG_INF("BASS modify source (bis_sync = 0, pa_sync = false) ok -> Now remove source (%u)",
+		ba_source_id);
 
 	err = bt_bap_broadcast_assistant_rem_src(conn, ba_source_id);
 	if (err) {
@@ -473,7 +479,13 @@ static void broadcast_assistant_mod_src_cb(struct bt_conn *conn, int err)
 
 static void broadcast_assistant_rem_src_cb(struct bt_conn *conn, int err)
 {
-	LOG_INF("BASS remove source (err: %d)", err);
+	if (err) {
+		LOG_ERR("BASS remove source (err: %d)", err);
+	} else {
+		LOG_INF("BASS remove source (err: %d)", err);
+	}
+
+	k_sem_give(&sem_rem_source);
 }
 
 static void connected_cb(struct bt_conn *conn, uint8_t err)
@@ -1197,6 +1209,15 @@ static void add_source_foreach_sink(struct bt_conn *conn, void *data)
 
 	LOG_INF("Adding broadcast source for this conn %p ...", (void *)conn);
 
+	err = k_sem_take(&sem_add_source, SYS_TIMEOUT_MS(2000));
+	if (err != 0) {
+		LOG_ERR("sem_rem_source timed out");
+	}
+
+	/* Clear recv_state */
+	memset(&ba_recv_state[bt_conn_index(conn)], 0,
+	       sizeof(struct bt_bap_scan_delegator_recv_state));
+
 	err = bt_bap_broadcast_assistant_add_src(conn, param);
 	if (err) {
 		LOG_ERR("Failed to add source (err %d)", err);
@@ -1210,9 +1231,6 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 
 	struct bt_bap_bass_subgroup subgroup[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS] = {{0}};
 	struct bt_bap_broadcast_assistant_add_src_param param = {0};
-
-	/* Clear recv_state */
-	memset(ba_recv_state, 0, sizeof(ba_recv_state));
 
 	num_subgroups = MIN(num_subgroups, CONFIG_BT_BAP_BASS_MAX_SUBGROUPS);
 	for (int i = 0; i < num_subgroups; i++) {
@@ -1258,6 +1276,10 @@ static void remove_source_foreach_sink(struct bt_conn *conn, void *data)
 
 	LOG_INF("Removing broadcast source for this conn %p ...", (void *)conn);
 
+	err = k_sem_take(&sem_rem_source, SYS_TIMEOUT_MS(2000));
+	if (err != 0) {
+		LOG_ERR("sem_rem_source timed out");
+	}
 	err = bt_bap_broadcast_assistant_mod_src(conn, param);
 	if (err) {
 		LOG_ERR("Failed to modify source (err %d)", err);
@@ -1330,7 +1352,7 @@ int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BRO
 
 int broadcast_assistant_init(void)
 {
-	k_work_init(&pa_sync_delete_work, &pa_sync_delete);
+	k_work_init(&pa_sync_delete_work, &pa_sync_delete_handler);
 
 	int err = bt_enable(NULL);
 	if (err) {
