@@ -13,76 +13,53 @@ import { BT_DataType, bufToAddressString } from '../lib/message.js';
 const template = document.createElement('template');
 template.innerHTML = `
 <style>
-/* Styles go here */
 div {
-	display: block;
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	row-gap: 5px;
 	position: relative;
 	box-sizing: border-box;
 	min-width: 5.14em;
-	height: 75px;
+	min-height: 75px;
 	margin: 0.2em;
-	background: transparent;
 	text-align: center;
-	border-radius: 5px;
-	border: 1px black solid;
 	user-select: none;
 	cursor: pointer;
 	padding: 0.7em 0.57em;
 	background-color: var(--background-color, white);
-	color: black;
-	box-shadow: 3px 3px 6px 3px gray;
-	transition: box-shadow 0.5s ease-out;
+	color: #333333;
 }
 
 #name {
-	position: absolute;
-	left: 5px;
-	top: 5px;
 	font-size: 1.2em;
+	text-align: left;
 }
 
 #source {
-	position: absolute;
-	font-style: italic;
-	right: 5px;
-	top: 5px;
 	font-size: 1.2em;
+	text-align: right;
 }
 
 #addr {
-	position: absolute;
-	left: 5px;
-	bottom: 5px;
 	font-size: 0.9em;
-}
-
-#uuid16s {
-	position: absolute;
-	left: 5px;
-	top: 30px;
-	font-size: 0.9em;
+	text-align: left;
 }
 
 #rssi {
-	position: absolute;
-	right: 5px;
-	bottom: 5px;
 	font-size: 0.9em;
+	text-align: right;
 }
 
 #card[state="connected"] {
 	background-color: lightgreen;
-	box-shadow: 1px 1px 2px 2px gray;
 }
 
 #card[state="connecting"] {
 	background-color: lightyellow;
-	box-shadow: 3px 3px 6px 3px gray;
 }
 
 #card[state="failed"] {
 	background-color: rgb(255,128,128);
-	box-shadow: 3px 3px 6px 3px gray;
 }
 
 </style>
@@ -90,7 +67,6 @@ div {
 <span id="name"></span>
 <span id="source"></span>
 <span id="addr"></span>
-<span id="uuid16s"></span>
 <span id="rssi"></span>
 </div>
 `;
@@ -117,7 +93,6 @@ export class SinkItem extends HTMLElement {
 	#nameEl
 	#sourceEl
 	#addrEl
-	#uuid16sEl
 	#rssiEl
 
 	constructor() {
@@ -135,7 +110,6 @@ export class SinkItem extends HTMLElement {
 		this.#nameEl = this.shadowRoot?.querySelector('#name');
 		this.#sourceEl = this.shadowRoot?.querySelector('#source');
 		this.#addrEl = this.shadowRoot?.querySelector('#addr');
-		this.#uuid16sEl = this.shadowRoot?.querySelector('#uuid16s');
 		this.#rssiEl = this.shadowRoot?.querySelector('#rssi');
 	}
 
@@ -143,9 +117,6 @@ export class SinkItem extends HTMLElement {
 		this.#nameEl.textContent = this.#sink.name;
 		this.#addrEl.textContent = `Addr: ${addrString(this.#sink.addr)}`;
 		this.#rssiEl.textContent = `RSSI: ${this.#sink.rssi}`;
-
-		// Enable the UUID16 list if needed to see what different sinks provide
-		// this.#uuid16sEl.textContent = `UUID16s: [${this.#sink.uuid16s?.map(a => {return '0x'+a.toString(16)})} ]`;
 
 		this.#cardEl.setAttribute('state', this.#sink.state);
 
