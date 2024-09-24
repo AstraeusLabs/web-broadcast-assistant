@@ -713,14 +713,14 @@ class AssistantModel extends EventTarget {
 
 		console.log(`BCODE request: Sink=${sink.name}, source_id=${source_id}`);
 
-		this.dispatchEvent(new CustomEvent('bc-request'));
+		this.dispatchEvent(new CustomEvent('bc-request', {detail: {sink , source_id}}));
 	}
 
-	sendBroadcastCode(arr) {
+	sendBroadcastCode(arr, source_id) {
 		console.log("Sending Broadcast Code CMD");
 
 		const tvArr = [
-			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: 1 }, // Hardcoded for now. This should be grabbed from the sync message
+			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: source_id },
 			{ type: BT_DataType.BT_DATA_BROADCAST_CODE, value: arr },
 		];
 

@@ -503,16 +503,19 @@ export class MainApp extends HTMLElement {
 		this.#model.addSourceFromBroadcastAudioURI(decoded);
 	}
 
-	requestBC() {
+	requestBC(evt) {
+		const {sink, source_id} = evt.detail;
+
 		console.log('Request BC');
 
-		this.#bcQuery.queryBCCode();
+		this.#bcQuery.queryBCCode(source_id);
 	}
 
 	bcReceived(evt) {
+		const {arr, source_id} = evt.detail;
 		console.log('Recevied BC');
 
-		this.#model.sendBroadcastCode(evt.detail.arr);
+		this.#model.sendBroadcastCode(arr, source_id);
 	}
 }
 customElements.define('main-app', MainApp);
