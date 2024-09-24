@@ -743,8 +743,18 @@ class AssistantModel extends EventTarget {
 		//       for now FW removes on connected sink(s)
 		console.log("Sending Remove Source CMD");
 
+		// Look through connected and playing/synced sinks to find a source ID
+		// TODO: Call this for each connected and synced sink if we move multi connection handling
+		// to the web code.
+		let sink = this.#sinks.find(i => i.source_added);
+
+		if (!sink) {
+			console.log("No playing sink found!");
+			return;
+		}
+
 		const tvArr = [
-			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: 1 } // Hardcoded for now. This should be grabbed from the sync message
+			{ type: BT_DataType.BT_DATA_SOURCE_ID, value: sink.synced_source_id }
 		];
 
 		// If there are multiple subgroups on the synced source, add array of zeros (len=num subgroups)
