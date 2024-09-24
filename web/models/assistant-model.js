@@ -185,8 +185,35 @@ class AssistantModel extends EventTarget {
 		}
 	}
 
-	handleSourceBaseFound(message) {
-		console.log(`Handle found Source BASE`);
+	handleSourceBIGInfo(message) {
+		console.log(`Handle Source BIG Info`);
+
+		const payloadArray = ltvToTvArray(message.payload);
+		// console.log('Payload', payloadArray);
+
+		const addr = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_IDENTITY,
+			BT_DataType.BT_DATA_RPA
+		]);
+
+		if (!addr) {
+			// TBD: Throw exception?
+			return;
+		}
+
+		const big_info = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_BIG_INFO
+		])?.value;
+
+		let source = this.#sources.find(i => compareTypedArray(i.addr.value.addr, addr.value.addr));
+		if (source && big_info) {
+			source.big_info = big_info;
+			this.dispatchEvent(new CustomEvent('big-info-updated', {detail: { source }}));
+		}
+	}
+
+	handleSourceBase(message) {
+		console.log(`Handle Source BASE`);
 
 		const payloadArray = ltvToTvArray(message.payload);
 		// console.log('Payload', payloadArray);
@@ -440,8 +467,11 @@ class AssistantModel extends EventTarget {
 			case MessageSubType.SOURCE_FOUND:
 			this.handleSourceFound(message);
 			break;
+			case MessageSubType.SOURCE_BIG_INFO:
+			this.handleSourceBIGInfo(message);
+			break;
 			case MessageSubType.SOURCE_BASE_FOUND:
-			this.handleSourceBaseFound(message);
+			this.handleSourceBase(message);
 			break;
 			case MessageSubType.SOURCE_ADDED:
 			console.log("Source Added");

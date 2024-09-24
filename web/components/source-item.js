@@ -220,7 +220,9 @@ export class SourceItem extends HTMLElement {
 		this.#addrEl.textContent = `Addr: ${addrString(this.#source.addr)}`;
 		this.#rssiEl.textContent = `RSSI: ${this.#source.rssi}`;
 		this.#broadcastIdEl.textContent = `Broadcast ID: 0x${
-			this.#source.broadcast_id?.toString(16).padStart(6, '0').toUpperCase()}`;
+			this.#source.broadcast_id?.toString(16).padStart(6, '0').toUpperCase()}${
+				this.#source?.big_info?.encryption ? " [ENCRYPTED]" : ""
+			}`;
 
 		this.#cardEl.setAttribute('state', this.#source.state);
 	}
@@ -229,6 +231,11 @@ export class SourceItem extends HTMLElement {
 		this.#baseEl.textContent = this.baseInfoString(this.#source.base);
 
 		this.refreshSubgroups(this.#source.base);
+	}
+
+	bigInfoUpdated() {
+		// TODO: Show more data
+		this.refresh();
 	}
 
 	setModel(source) {
