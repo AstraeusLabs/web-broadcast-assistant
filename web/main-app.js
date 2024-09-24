@@ -73,11 +73,10 @@ button {
 	box-sizing: border-box;
 	min-width: 5.14em;
         width: 100%;
-	// margin: 0.2em;
-	background: transparent;
+	background: #e0edf9;
 	text-align: center;
 	font: inherit;
-	text-transform: uppercase;
+	xxxtext-transform: uppercase;
 	outline: none;
 	border: 0;
 	border-radius: 5px;
@@ -85,19 +84,19 @@ button {
 	cursor: pointer;
 	z-index: 0;
 	padding: 0.7em 0.57em;
-	box-shadow: 3px 3px 6px 3px gray;
-	background-color: var(--background-color, );
-	color: black;
+	box-shadow: 1px 6px 8px lightgray;
+	color: #333333;
 	transition: box-shadow 0.1s ease-out;
       }
 
 button:active:not([disabled]) {
-	box-shadow: 1px 1px 2px 3px gray;
+	box-shadow: 1px 1px 2px 3px lightgray;
 }
 
 button:disabled {
 	color: gray;
 	box-shadow: 1px 1px 2px 2px lightgray;
+	background: white;
 }
 
 .textbox {
@@ -106,7 +105,7 @@ button:disabled {
 
 	background: rgba(255, 255, 255, 0.8);
 	backdrop-filter: blur;
-	box-shadow: 3px 3px 6px 3px lightgray;
+	box-shadow: 1px 6px 8px lightgray;
 
 	height: 5em;
 	overflow-y: auto;
@@ -194,16 +193,16 @@ button:disabled {
 	<div class="content">
 		<div class="col">
 			<div class="row">
-			<h2>WebUSB Broadcast Assistant</h2>
+			<h2>Broadcast Assistant</h2>
 			<div class="right-align">
 			<heartbeat-indicator></heartbeat-indicator>
 			</div>
 			</div>
 
 			<div class="row">
-			<button id="sink_scan">Discover<br>Sinks</button>
+			<button id="sink_scan">Search for<br>Devices</button>
 			<button id='stop_scan'>Stop<br>Scanning</button>
-			<button id="source_scan">Discover<br>Sources</button>
+			<button id="source_scan">Search for<br>Auracasts</button>
 			</div>
 
 			<!-- broadcast sink components... -->
@@ -211,7 +210,9 @@ button:disabled {
 
 			<!-- broadcast source components... -->
 			<source-device-list></source-device-list>
-			<button id="qr_scan">Broadcast Audio URI QR Scan</button>
+			<button id="qr_scan">
+			<svg width="30px" height="30px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 9h6V3H3zm1-5h4v4H4zm1 1h2v2H5zm10 4h6V3h-6zm1-5h4v4h-4zm1 1h2v2h-2zM3 21h6v-6H3zm1-5h4v4H4zm1 1h2v2H5zm15 2h1v2h-2v-3h1zm0-3h1v1h-1zm0-1v1h-1v-1zm-10 2h1v4h-1v-4zm-4-7v2H4v-1H3v-1h3zm4-3h1v1h-1zm3-3v2h-1V3h2v1zm-3 0h1v1h-1zm10 8h1v2h-2v-1h1zm-1-2v1h-2v2h-2v-1h1v-2h3zm-7 4h-1v-1h-1v-1h2v2zm6 2h1v1h-1zm2-5v1h-1v-1zm-9 3v1h-1v-1zm6 5h1v2h-2v-2zm-3 0h1v1h-1v1h-2v-1h1v-1zm0-1v-1h2v1zm0-5h1v3h-1v1h-1v1h-1v-2h-1v-1h3v-1h-1v-1zm-9 0v1H4v-1zm12 4h-1v-1h1zm1-2h-2v-1h2zM8 10h1v1H8v1h1v2H8v-1H7v1H6v-2h1v-2zm3 0V8h3v3h-2v-1h1V9h-1v1zm0-4h1v1h-1zm-1 4h1v1h-1zm3-3V6h1v1z"/><path fill="none" d="M0 0h24v24H0z"/></svg>
+			<span style="position: relative; bottom: 0.5em">Scan Auracast QR-code</span></button>
 
 			<!-- storage buttons, enable with store=y -->
 			<div class="row storage hidden">
@@ -233,7 +234,7 @@ button:disabled {
 <div id="qrscannerbox" class="hidden">
 	<div class="qrscannercontent">
 		<div class="col">
-			<h2>Scan Broadcast Audio URI</h2>
+			<h2>Scan Auracast QR-code</h2>
 			<qr-scanner></qr-scanner>
 		</div>
 	</div>

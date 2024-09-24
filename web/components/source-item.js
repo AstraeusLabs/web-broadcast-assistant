@@ -20,19 +20,14 @@ template.innerHTML = `
 	position: relative;
 	box-sizing: border-box;
 	min-width: 5.14em;
-	min-height: 100px;
+	min-height: 75px;
 	margin: 0.2em;
-	background: transparent;
 	text-align: center;
-	border-radius: 5px;
-	border: 1px black solid;
 	user-select: none;
 	cursor: pointer;
 	padding: 0.7em 0.57em;
 	background-color: var(--background-color, white);
-	color: black;
-	box-shadow: 3px 3px 6px 3px gray;
-	transition: box-shadow 0.5s ease-out;
+	color: #333333;
 }
 
 #name {
@@ -41,12 +36,6 @@ template.innerHTML = `
 }
 
 #addr {
-	grid-column: 1 / 3;
-	font-size: 0.9em;
-	text-align: left;
-}
-
-#base {
 	grid-column: 1 / 3;
 	font-size: 0.9em;
 	text-align: left;
@@ -73,17 +62,15 @@ template.innerHTML = `
 }
 
 .subgroup {
-	border: 1px solid blue;
+	border: 1px solid #73b9fa;
 	border-radius: 5px;
 	box-sizing: border-box;
 	padding: 8px;
-	color: blue;
 	text-align: left;
 }
 
 .subgroup.selected {
-	background: blue;
-	color: white
+	background: #73b9fa;
 }
 
 #subgroups {
@@ -98,7 +85,6 @@ template.innerHTML = `
 <div id="card">
 <span id="name"></span>
 <span id="broadcast_name"></span>
-<span id="base">BASE: Pending...</span>
 <span id="addr"></span>
 <span id="broadcast_id"></span>
 <span id="rssi"></span>
@@ -130,7 +116,6 @@ export class SourceItem extends HTMLElement {
 	#addrEl
 	#broadcastIdEl
 	#rssiEl
-	#baseEl
 	#subgroupsEl
 
 	constructor() {
@@ -150,22 +135,7 @@ export class SourceItem extends HTMLElement {
 		this.#addrEl = this.shadowRoot?.querySelector('#addr');
 		this.#broadcastIdEl = this.shadowRoot?.querySelector('#broadcast_id');
 		this.#rssiEl = this.shadowRoot?.querySelector('#rssi');
-		this.#baseEl = this.shadowRoot?.querySelector('#base');
 		this.#subgroupsEl = this.shadowRoot?.querySelector('#subgroups');
-	}
-
-	baseInfoString(base) {
-		let result = "BASE: ";
-
-		if (!base) {
-			result += "Pending...";
-		} else {
-			// Subgroups
-			let sg_count = 0;
-			result += ` ${base.subgroups?.length || 0} subgroup(s) found`;
-		}
-
-		return result;
 	}
 
 	refreshSubgroups(base) {
@@ -195,7 +165,7 @@ export class SourceItem extends HTMLElement {
 				item.classList.add('subgroup');
 				item.classList.toggle('selected', subgroup.isSelected);
 
-				let sg_str = `Subgroup #${idx} (w/${subgroup.bises?.length || 0} BIS):`;
+				let sg_str = `#${idx} (${subgroup.bises?.length || 0} channel(s)):`;
 				const str_tk = [];
 				const freq = subgroup.codec_data?.find(i => i.name === "SamplingFrequency")?.value;
 				if (freq) {
@@ -228,8 +198,6 @@ export class SourceItem extends HTMLElement {
 	}
 
 	baseUpdated() {
-		this.#baseEl.textContent = this.baseInfoString(this.#source.base);
-
 		this.refreshSubgroups(this.#source.base);
 	}
 

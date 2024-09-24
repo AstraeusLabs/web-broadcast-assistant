@@ -15,24 +15,27 @@ Source Device List Component
 const template = document.createElement('template');
 template.innerHTML = `
 <style>
-/* Styles go here */
-
-#scan {
-	border-radius: 20px;
-}
-
 #container {
 	display: flex;
 	flex-direction: column;
+	color: #333333;
 }
 
-#list {
+#list:has(source-item) {
 	display: flex;
 	flex-direction: column;
+	border: 1px solid lightgray;
+	border-radius: 5px;
+	box-shadow: 1px 6px 8px lightgray;
+}
+
+source-item:not(:last-child) {
+	border-bottom: 1px solid gray;
 }
 
 input {
 	font-size: 1.2em;
+	margin-bottom: 10px;
 }
 
 .hidden {
@@ -40,7 +43,7 @@ input {
 }
 </style>
 <div id="container">
-<h2>Source list</h2>
+<h3>Select Auracast broadcast</h3>
 <input id="filter" placeholder="Filter...">
 <div id="list">
 </div>
