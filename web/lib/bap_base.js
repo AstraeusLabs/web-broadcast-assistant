@@ -1,5 +1,3 @@
-// DRAFT
-
 const BT_UUID_BASIC_AUDIO = 0x1851;
 const ECANCELLED = 125;
 
