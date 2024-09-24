@@ -280,6 +280,8 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		case BT_BAP_BIG_ENC_STATE_BAD_CODE:
 			LOG_INF("The Broadcast Isochronous Group bad broadcast code");
 			evt_msg_sub_type = MESSAGE_SUBTYPE_NEW_ENC_STATE_BAD_CODE;
+			LOG_HEXDUMP_INF(state->bad_code, BT_AUDIO_BROADCAST_CODE_SIZE,
+					"bad broadcast code:");
 			break;
 		default:
 			LOG_ERR("Invalid State Transition");
@@ -1115,7 +1117,7 @@ int disconnect_unpair_all(void)
 
 	LOG_INF("Disconnecting complete");
 
-	err = bt_unpair(BT_ID_DEFAULT, NULL);
+	err = bt_unpair(BT_ID_DEFAULT, BT_ADDR_LE_ANY);
 	if (err) {
 		LOG_ERR("bt_unpair failed with %d", err);
 	}
@@ -1203,9 +1205,21 @@ int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 static void add_source_foreach_sink(struct bt_conn *conn, void *data)
 {
 	int err;
+	struct bt_conn_info info;
 
 	const struct bt_bap_broadcast_assistant_add_src_param *param =
 		(struct bt_bap_broadcast_assistant_add_src_param *)data;
+
+	err = bt_conn_get_info(conn, &info);
+	if (err) {
+		LOG_ERR("Failed to get conn info (err %d)", err);
+	}
+
+	if (info.state != BT_CONN_STATE_CONNECTED) {
+		LOG_WRN("Skip adding broadcast source for this conn %p (not connected)",
+			(void *)conn);
+		return;
+	}
 
 	LOG_INF("Adding broadcast source for this conn %p ...", (void *)conn);
 
@@ -1270,9 +1284,21 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 static void remove_source_foreach_sink(struct bt_conn *conn, void *data)
 {
 	int err;
+	struct bt_conn_info info;
 
 	const struct bt_bap_broadcast_assistant_mod_src_param *param =
 		(struct bt_bap_broadcast_assistant_mod_src_param *)data;
+
+	err = bt_conn_get_info(conn, &info);
+	if (err) {
+		LOG_ERR("Failed to get conn info (err %d)", err);
+	}
+
+	if (info.state != BT_CONN_STATE_CONNECTED) {
+		LOG_WRN("Skip removing broadcast source for this conn %p (not connected)",
+			(void *)conn);
+		return;
+	}
 
 	LOG_INF("Removing broadcast source for this conn %p ...", (void *)conn);
 
@@ -1322,8 +1348,20 @@ typedef struct add_broadcast_code_data {
 static void add_broadcast_code_foreach_sink(struct bt_conn *conn, void *data)
 {
 	int err;
+	struct bt_conn_info info;
 
 	add_broadcast_code_data_t *add_broadcast_code_data = (add_broadcast_code_data_t *)data;
+
+	err = bt_conn_get_info(conn, &info);
+	if (err) {
+		LOG_ERR("Failed to get conn info (err %d)", err);
+	}
+
+	if (info.state != BT_CONN_STATE_CONNECTED) {
+		LOG_WRN("Skip adding broadcast code for this conn %p (not connected)",
+			(void *)conn);
+		return;
+	}
 
 	LOG_INF("Adding broadcast code for this conn %p ...", (void *)conn);
 
