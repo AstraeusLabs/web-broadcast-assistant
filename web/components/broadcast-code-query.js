@@ -35,6 +35,7 @@ Enter your Broadcast Code:
 export class BroadcastCodeQuery extends HTMLElement {
 	#dialog
 	#broadcastCodeField
+	#source_id
 
 	constructor() {
 		super();
@@ -46,7 +47,7 @@ export class BroadcastCodeQuery extends HTMLElement {
 		this.submitDialogBox = this.submitDialogBox.bind(this);
 		this.cancelDialogBox = this.cancelDialogBox.bind(this);
 	}
-	
+
 	connectedCallback() {
 		console.log('connectedCallback - BroadcastCodeQuery')
 
@@ -61,8 +62,10 @@ export class BroadcastCodeQuery extends HTMLElement {
 		// Remove listeners, etc.
 	}
 
-	queryBCCode() {
+	queryBCCode(source_id) {
 		console.log('Request Broadcast Code from User')
+
+		this.#source_id = source_id;
 
 		this.#dialog.showModal();
 	}
@@ -82,7 +85,7 @@ export class BroadcastCodeQuery extends HTMLElement {
 
 		textEncoder.encodeInto(broadcastCode, u8array);
 
-		this.dispatchEvent(new CustomEvent('bc-received', {detail: { arr: (u8array) }}));
+		this.dispatchEvent(new CustomEvent('bc-received', {detail: { arr: (u8array), source_id: this.#source_id }}));
 	}
 
 }
