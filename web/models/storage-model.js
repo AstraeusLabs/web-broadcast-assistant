@@ -29,6 +29,7 @@ export class StorageModel extends EventTarget {
                 // Setup listener
 
                 this.#assistantModel.addEventListener('base-updated', this.broadcastSourceUpdated);
+                this.#assistantModel.addEventListener('big-info-updated', this.broadcastSourceUpdated);
         }
 
         #getKeys(prefix) {
@@ -47,8 +48,8 @@ export class StorageModel extends EventTarget {
         broadcastSourceUpdated(evt) {
                 const { source } = evt.detail;
 
-                if (source?.base) {
-                        // BASE found, save full source info in localStorage
+                if (source?.base && source?.big_info) {
+                        // BASE and BIG info present => save full source info in localStorage
                         // using millisec timestamp as key.
 
                         localStorage.setItem(`source:${Date.now()}`, JSON.stringify(source));
