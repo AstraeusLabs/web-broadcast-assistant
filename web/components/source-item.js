@@ -20,7 +20,7 @@ template.innerHTML = `
 	position: relative;
 	box-sizing: border-box;
 	min-width: 5.14em;
-	min-height: 75px;
+	min-height: 50px;
 	margin: 0.2em;
 	text-align: center;
 	user-select: none;
@@ -35,15 +35,33 @@ template.innerHTML = `
 	text-align: left;
 }
 
+#state {
+	text-align: right;
+	font-weight: bolder;
+	color: #666666;
+	flex-grow: 1;
+}
+
+#card[state="selected"] {
+	background-color: lightgreen;
+}
+
 #addr {
 	grid-column: 1 / 3;
 	font-size: 0.9em;
 	text-align: left;
 }
 
+#bt_name {
+	grid-column: 1 / 3;
+	font-size: 0.9em;
+	text-align: left;
+}
+
 #broadcast_name {
-	font-size: 1.2em;
-	text-align: right;
+	grid-column: 1 / 3;
+	font-size: 0.9em;
+	text-align: left;
 }
 
 #broadcast_id {
@@ -56,10 +74,6 @@ template.innerHTML = `
 	text-align: right;
 }
 
-#card[state="selected"] {
-	background-color: lightgreen;
-	box-shadow: 1px 1px 2px 2px gray;
-}
 
 .subgroup {
 	border: 1px solid #73b9fa;
@@ -79,15 +93,23 @@ template.innerHTML = `
 	grid-column: 1 / 3;
 	font-size: 0.9em;
 	row-gap: 5px;
+	height: fit-content;
 }
+
+.details {
+	display: var(--display-details, inherit);
+}
+
 
 </style>
 <div id="card">
 <span id="name"></span>
-<span id="broadcast_name"></span>
-<span id="addr"></span>
-<span id="broadcast_id"></span>
-<span id="rssi"></span>
+<span id="state">PLAY</span>
+<span id="bt_name" class="details"></span>
+<span id="broadcast_name" class="details"></span>
+<span id="addr" class="details"></span>
+<span id="broadcast_id" class="details"></span>
+<span id="rssi" class="details"></span>
 <div id="subgroups"></div>
 </div>
 `;
@@ -112,6 +134,7 @@ export class SourceItem extends HTMLElement {
 	#source
 	#cardEl
 	#nameEl
+	#btNameEl
 	#broadcastNameEl
 	#addrEl
 	#broadcastIdEl
@@ -131,6 +154,7 @@ export class SourceItem extends HTMLElement {
 	connectedCallback() {
 		this.#cardEl = this.shadowRoot?.querySelector('#card');
 		this.#nameEl = this.shadowRoot?.querySelector('#name');
+		this.#btNameEl = this.shadowRoot?.querySelector('#bt_name');
 		this.#broadcastNameEl = this.shadowRoot?.querySelector('#broadcast_name');
 		this.#addrEl = this.shadowRoot?.querySelector('#addr');
 		this.#broadcastIdEl = this.shadowRoot?.querySelector('#broadcast_id');
@@ -185,7 +209,10 @@ export class SourceItem extends HTMLElement {
 
 	refresh() {
 		// Set name (and more...)
-		this.#nameEl.textContent = this.#source.name;
+		this.#nameEl.textContent = this.#source.broadcast_name ||
+					   this.#source.name ||
+					   `0x${this.#source.broadcast_id?.toString(16).padStart(6, '0').toUpperCase()}`;
+		this.#btNameEl.textContent = this.#source.name;
 		this.#broadcastNameEl.textContent = this.#source.broadcast_name;
 		this.#addrEl.textContent = `Addr: ${addrString(this.#source.addr)}`;
 		this.#rssiEl.textContent = `RSSI: ${this.#source.rssi}`;

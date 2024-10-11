@@ -406,6 +406,12 @@ export class MainApp extends HTMLElement {
 			activityLog?.remove();
 		}
 
+		if (this.#pageState.get('details') !== 'y') {
+			// Hide details in cards
+			console.log("Hiding details");
+			document.body.style.setProperty("--display-details", "none");
+		}
+
 		const heartbeat = this.shadowRoot?.querySelector('heartbeat-indicator');
 		if (this.#pageState.get('heartbeat') !== 'y') {
 			heartbeat?.remove();
