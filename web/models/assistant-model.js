@@ -367,6 +367,7 @@ class AssistantModel extends EventTarget {
 			if (err !== 0) {
 				console.log("Error code", err);
 				sink.state = "failed";
+				this.dispatchEvent(new CustomEvent('sink-updated', {detail: { sink }}));
 			} else {
 				if (message.subType === MessageSubType.SINK_CONNECTED) {
 					sink.state = "connected";
@@ -375,6 +376,28 @@ class AssistantModel extends EventTarget {
 					this.#sinks.splice(this.#sinks.indexOf(sink, 1));
 					this.dispatchEvent(new CustomEvent('sink-disconnected', {detail: { sink }}));
 				}
+			}
+		}
+	}
+
+	handleSinkConnectivityRes(message) {
+		console.log(`Handle potential Error`);
+		// TODO: Tie RES to actual call (could be another sink)
+
+		const payloadArray = ltvToTvArray(message.payload);
+
+		const err = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_ERROR_CODE
+		])?.value;
+
+		if (err !== 0) {
+			let sink = this.#sinks.find(i => i.state === "connecting");
+			if (!sink) {
+				console.warn("Unknown sink connected with addr:", addr.value.addr);
+			} else {
+				console.log("Error code", err);
+				sink.state = "failed";
+				this.dispatchEvent(new CustomEvent('sink-updated', {detail: { sink }}));
 			}
 		}
 	}
@@ -431,6 +454,7 @@ class AssistantModel extends EventTarget {
 			break;
 			case MessageSubType.CONNECT_SINK:
 			console.log('CONNECT_SINK response received');
+			this.handleSinkConnectivityRes(message);
 			break;
 			case MessageSubType.ADD_SOURCE:
 			console.log('ADD_SOURCE response received');
