@@ -24,12 +24,13 @@ template.innerHTML = `
 #list:has(sink-item) {
 	display: flex;
 	flex-direction: column;
+	border: 1px solid lightgray;
 	border-radius: 5px;
 	box-shadow: 1px 6px 8px lightgray;
 }
 
 sink-item:not(:last-child) {
-	border-bottom: 1px solid gray;
+	border-bottom: 1px solid lightgray;
 }
 
 input {
