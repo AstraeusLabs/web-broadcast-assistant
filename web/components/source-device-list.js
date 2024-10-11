@@ -30,7 +30,7 @@ template.innerHTML = `
 }
 
 source-item:not(:last-child) {
-	border-bottom: 1px solid gray;
+	border-bottom: 1px solid lightgray;
 }
 
 input {
