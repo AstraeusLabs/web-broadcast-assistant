@@ -41,10 +41,14 @@ input {
 .hidden {
 	display: none;
 }
+
+.details {
+	display: var(--display-details, inherit);
+}
 </style>
 <div id="container">
 <h3>Select Auracast broadcast</h3>
-<input id="filter" placeholder="Filter...">
+<input id="filter" class="details" placeholder="Filter...">
 <div id="list">
 </div>
 </div>
