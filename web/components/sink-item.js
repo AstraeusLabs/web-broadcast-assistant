@@ -25,7 +25,6 @@ template.innerHTML = `
 	user-select: none;
 	cursor: pointer;
 	padding: 0.7em;
-	background-color: var(--background-color, white);
 	color: #333333;
 }
 
@@ -89,7 +88,7 @@ template.innerHTML = `
 }
 
 .details {
-	display: var(--display-details, none);
+	display: var(--display-details, inherit);
 }
 
 </style>

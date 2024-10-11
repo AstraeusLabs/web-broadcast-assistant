@@ -16,23 +16,24 @@ template.innerHTML = `
 #card {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
-	row-gap: 5px;
+	row-gap: 10px;
 	position: relative;
 	box-sizing: border-box;
 	min-width: 5.14em;
 	min-height: 50px;
 	margin: 0.2em;
+	margin-top: 13px;
 	text-align: center;
 	user-select: none;
 	cursor: pointer;
 	padding: 0.7em 0.57em;
-	background-color: var(--background-color, white);
 	color: #333333;
 }
 
 #name {
 	font-size: 1.2em;
 	text-align: left;
+	align-content: center;
 }
 
 #state {
@@ -40,10 +41,7 @@ template.innerHTML = `
 	font-weight: bolder;
 	color: #666666;
 	flex-grow: 1;
-}
-
-#card[state="selected"] {
-	background-color: lightgreen;
+	align-content: center;
 }
 
 #addr {
@@ -134,6 +132,7 @@ export class SourceItem extends HTMLElement {
 	#source
 	#cardEl
 	#nameEl
+	#stateEl
 	#btNameEl
 	#broadcastNameEl
 	#addrEl
@@ -154,6 +153,7 @@ export class SourceItem extends HTMLElement {
 	connectedCallback() {
 		this.#cardEl = this.shadowRoot?.querySelector('#card');
 		this.#nameEl = this.shadowRoot?.querySelector('#name');
+		this.#stateEl = this.shadowRoot?.querySelector('#state');
 		this.#btNameEl = this.shadowRoot?.querySelector('#bt_name');
 		this.#broadcastNameEl = this.shadowRoot?.querySelector('#broadcast_name');
 		this.#addrEl = this.shadowRoot?.querySelector('#addr');
@@ -221,7 +221,7 @@ export class SourceItem extends HTMLElement {
 				this.#source?.big_info?.encryption ? " [ENCRYPTED]" : ""
 			}`;
 
-		this.#cardEl.setAttribute('state', this.#source.state);
+		this.#stateEl.textContent = this.#source.state === "selected" ? "STOP" : "PLAY";
 	}
 
 	baseUpdated() {
