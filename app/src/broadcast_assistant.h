@@ -22,6 +22,8 @@
 #define BT_DATA_BASE         (BT_DATA_MANUFACTURER_DATA - 8)
 #define BT_DATA_SOURCE_ID    (BT_DATA_MANUFACTURER_DATA - 9)
 #define BT_DATA_BIS_SYNC     (BT_DATA_MANUFACTURER_DATA - 10)
+#define BT_DATA_VOLUME       (BT_DATA_MANUFACTURER_DATA - 11)
+#define BT_DATA_MUTE         (BT_DATA_MANUFACTURER_DATA - 12)
 
 enum {
 	BROADCAST_ASSISTANT_SCAN_TARGET_SOURCE = BIT(0),
@@ -38,6 +40,8 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	       uint8_t num_subgroups, uint32_t *bis_sync);
 int remove_source(uint8_t source_id, uint8_t num_subgroups);
 int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE]);
+int set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume);
+int set_mute(bt_addr_le_t *bt_addr_le, uint8_t state);
 int broadcast_assistant_init(void);
 int disconnect_unpair_all(void);
 

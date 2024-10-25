@@ -7,6 +7,7 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/bap.h>
+#include <zephyr/bluetooth/audio/vcp.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
 
@@ -79,6 +80,12 @@ static bool scan_for_sink(const struct bt_le_scan_recv_info *info, struct net_bu
 static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf_simple *ad);
 static void scan_timeout_cb(void);
 
+/* Volume control */
+static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t vocs_count, uint8_t aics_count);
+static void vcs_write_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err);
+static void vcs_state_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t volume, uint8_t mute);
+static void vcs_flags_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t flags);
+
 static struct bt_le_scan_cb scan_callbacks = {
 	.recv = scan_recv_cb,
 	.timeout = scan_timeout_cb,
@@ -98,6 +105,19 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.disconnected = disconnected_cb,
 	.security_changed = security_changed_cb,
 	.identity_resolved = identity_resolved_cb
+};
+
+static struct bt_vcp_vol_ctlr_cb vcp_callbacks = {
+	.discover = vcs_discover_cb,
+	.vol_down = vcs_write_cb,
+	.vol_up = vcs_write_cb,
+	.mute = vcs_write_cb,
+	.unmute = vcs_write_cb,
+	.vol_down_unmute = vcs_write_cb,
+	.vol_up_unmute = vcs_write_cb,
+	.vol_set = vcs_write_cb,
+	.state = vcs_state_cb,
+	.flags = vcs_flags_cb,
 };
 
 static uint8_t ba_scan_target; /* scan state */
@@ -211,6 +231,7 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 	const bt_addr_le_t *bt_addr_le;
 	char addr_str[BT_ADDR_LE_STR_LEN];
 	struct net_buf *evt_msg;
+	struct bt_vcp_vol_ctlr *vol_ctlr;
 
 	LOG_INF("Broadcast assistant discover callback (%p, %d, %u)", (void *)conn, err, recv_state_count);
 	if (err) {
@@ -243,7 +264,114 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 	net_buf_add_le32(evt_msg, 0 /* OK */);
 
 	send_net_buf_event(MESSAGE_SUBTYPE_SINK_CONNECTED, evt_msg);
-	restart_scanning_if_needed();
+
+	err = bt_vcp_vol_ctlr_discover(conn, &vol_ctlr);
+	if (err != 0) {
+		LOG_ERR("Failed to discover vol ctrl (err %d)", err);
+		restart_scanning_if_needed();
+	}
+}
+
+static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t vocs_count,
+			    uint8_t aics_count)
+{
+	const bt_addr_le_t *bt_addr_le;
+	char addr_str[BT_ADDR_LE_STR_LEN];
+	struct net_buf *evt_msg;
+	struct bt_conn *conn;
+
+	if (err != 0) {
+		LOG_WRN("Volume control service could not be discovered (%d)\n", err);
+		restart_scanning_if_needed();
+		return;
+	}
+
+	if (bt_vcp_vol_ctlr_conn_get(vol_ctlr, &conn) != 0) {
+		LOG_ERR("Volume control conn error\n");
+		restart_scanning_if_needed();
+		return;
+	}
+
+	LOG_INF("Volume control discover callback (vocs:%u, aics:%u)", vocs_count, aics_count);
+
+	/* Send volume control status message */
+	evt_msg = message_alloc_tx_message();
+	bt_addr_le = bt_conn_get_dst(conn);
+	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
+	LOG_DBG("Volume discover %s", addr_str);
+
+	/* Bluetooth LE Device Address */
+	net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
+	net_buf_add_u8(evt_msg,
+		       bt_addr_le_is_identity(bt_addr_le) ? BT_DATA_IDENTITY : BT_DATA_RPA);
+	net_buf_add_u8(evt_msg, bt_addr_le->type);
+	net_buf_add_mem(evt_msg, &bt_addr_le->a, sizeof(bt_addr_t));
+
+	send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_CONTROL_FOUND, evt_msg);
+}
+
+static void vcs_write_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
+{
+	if (err != 0) {
+		LOG_WRN("VCP: Write failed (%d)\n", err);
+		return;
+	}
+}
+
+static void vcs_state_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t volume, uint8_t mute)
+{
+	const bt_addr_le_t *bt_addr_le;
+	char addr_str[BT_ADDR_LE_STR_LEN];
+	struct net_buf *evt_msg;
+	struct bt_conn *conn;
+
+	LOG_INF("Volume control status: Err %d, Volume %u, mute %u", err, volume, mute);
+
+	if (bt_vcp_vol_ctlr_conn_get(vol_ctlr, &conn) != 0) {
+		LOG_ERR("Volume control conn error\n");
+
+		return;
+	}
+
+	/* Send volume control status message */
+	evt_msg = message_alloc_tx_message();
+	bt_addr_le = bt_conn_get_dst(conn);
+	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
+	LOG_DBG("Volume status from %s", addr_str);
+
+	/* Bluetooth LE Device Address */
+	net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
+	net_buf_add_u8(evt_msg,
+		       bt_addr_le_is_identity(bt_addr_le) ? BT_DATA_IDENTITY : BT_DATA_RPA);
+	net_buf_add_u8(evt_msg, bt_addr_le->type);
+	net_buf_add_mem(evt_msg, &bt_addr_le->a, sizeof(bt_addr_t));
+
+	/* volume */
+	net_buf_add_u8(evt_msg, 2);
+	net_buf_add_u8(evt_msg, BT_DATA_VOLUME);
+	net_buf_add_u8(evt_msg, volume);
+
+	/* mute */
+	net_buf_add_u8(evt_msg, 2);
+	net_buf_add_u8(evt_msg, BT_DATA_MUTE);
+	net_buf_add_u8(evt_msg, mute);
+
+	/* error code */
+	net_buf_add_u8(evt_msg, 1 /* len of BT_DATA type */ + sizeof(int32_t));
+	net_buf_add_u8(evt_msg, BT_DATA_ERROR_CODE);
+	net_buf_add_le32(evt_msg, err);
+
+	send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_STATE, evt_msg);
+}
+
+static void vcs_flags_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t flags)
+{
+	if (err != 0) {
+		LOG_WRN("Volume control flags cb err (%d)", err);
+		return;
+	}
+
+	LOG_INF("Volume control flags 0x%02X\n", flags);
 }
 
 static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
@@ -1388,6 +1516,67 @@ int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BRO
 	return 0;
 }
 
+int set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume)
+{
+	struct bt_conn *conn;
+	struct bt_vcp_vol_ctlr *vol_ctlr;
+	int err;
+
+	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le);
+	if (!conn) {
+		LOG_ERR("Failed to lookup connection");
+
+		return -EINVAL;
+	}
+
+	vol_ctlr = bt_vcp_vol_ctlr_get_by_conn(conn);
+	if (vol_ctlr == NULL) {
+		LOG_ERR("No volume control for this conn (%p)", (void *)conn);
+
+		return -EINVAL;
+	}
+
+	err = bt_vcp_vol_ctlr_set_vol(vol_ctlr, volume);
+	if (err != 0) {
+		LOG_ERR("Failed to set volume (err %d)", err);
+
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int set_mute(bt_addr_le_t *bt_addr_le, uint8_t state)
+{
+	struct bt_conn *conn;
+	struct bt_vcp_vol_ctlr *vol_ctlr;
+	int err;
+
+	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le);
+	if (!conn) {
+		LOG_ERR("Failed to lookup connection");
+
+		return -EINVAL;
+	}
+
+	vol_ctlr = bt_vcp_vol_ctlr_get_by_conn(conn);
+	if (vol_ctlr == NULL) {
+		LOG_ERR("No volume control for this conn (%p)", (void *)conn);
+
+		return -EINVAL;
+	}
+
+	err = (state == BT_VCP_STATE_UNMUTED) ? bt_vcp_vol_ctlr_unmute(vol_ctlr)
+					      : bt_vcp_vol_ctlr_mute(vol_ctlr);
+	if (err != 0) {
+		LOG_ERR("Failed to set mute state (err %d)", err);
+
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 int broadcast_assistant_init(void)
 {
 	k_work_init(&pa_sync_delete_work, &pa_sync_delete_handler);
@@ -1403,6 +1592,7 @@ int broadcast_assistant_init(void)
 	bt_le_scan_cb_register(&scan_callbacks);
 	bt_le_per_adv_sync_cb_register(&pa_synced_callbacks);
 	bt_bap_broadcast_assistant_register_cb(&broadcast_assistant_callbacks);
+	bt_vcp_vol_ctlr_cb_register(&vcp_callbacks);
 	LOG_INF("Bluetooth scan callback registered");
 
 	k_mutex_init(&source_data_list_mutex);

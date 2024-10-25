@@ -11,6 +11,7 @@
 #include <zephyr/net/buf.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/audio/bap.h>
+#include <zephyr/bluetooth/audio/vcp.h>
 
 #include "webusb.h"
 #include "broadcast_assistant.h"
@@ -26,6 +27,7 @@ struct webusb_ltv_data {
 	uint32_t broadcast_id;
 	bt_addr_le_t addr;
 	uint8_t src_id;
+	uint8_t volume;
 	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
 	uint8_t num_subgroups;
 	uint32_t bis_sync[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS];
@@ -213,6 +215,10 @@ bool ltv_found(struct bt_data *data, void *user_data)
 		memcpy(&_parsed->bis_sync, &data->data[0], data->data_len);
 		LOG_HEXDUMP_DBG(_parsed->bis_sync, data->data_len, "bis_sync:");
 		return true;
+	case BT_DATA_VOLUME:
+		_parsed->volume = data->data[0];
+		LOG_DBG("volume: %u", _parsed->src_id);
+		return true;
 	default:
 		LOG_DBG("Unknown type");
 	}
@@ -329,6 +335,24 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 		// Stop heartbeat if active
 		heartbeat_on = false;
 		k_timer_stop(&heartbeat_timer);
+		break;
+
+	case MESSAGE_SUBTYPE_SET_VOLUME:
+		LOG_DBG("MESSAGE_SUBTYPE_SET_VOLUME (vol %u, len %u)", parsed_ltv_data.volume, msg_length);
+		msg_rc = set_volume(&parsed_ltv_data.addr, parsed_ltv_data.volume);
+		send_response(MESSAGE_SUBTYPE_SET_VOLUME, msg_seq_no, msg_rc);
+		break;
+
+	case MESSAGE_SUBTYPE_MUTE:
+		LOG_DBG("MESSAGE_SUBTYPE_MUTE (len %u)", msg_length);
+		msg_rc = set_mute(&parsed_ltv_data.addr, BT_VCP_STATE_MUTED);
+		send_response(MESSAGE_SUBTYPE_MUTE, msg_seq_no, msg_rc);
+		break;
+
+	case MESSAGE_SUBTYPE_UNMUTE:
+		LOG_DBG("MESSAGE_SUBTYPE_UNMUTE (len %u)", msg_length);
+		msg_rc = set_mute(&parsed_ltv_data.addr, BT_VCP_STATE_UNMUTED);
+		send_response(MESSAGE_SUBTYPE_UNMUTE, msg_seq_no, msg_rc);
 		break;
 
 	default:
