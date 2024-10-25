@@ -380,6 +380,60 @@ class AssistantModel extends EventTarget {
 		}
 	}
 
+	handleVolumeState(message) {
+		console.log(`Handle Volume State`);
+
+		const payloadArray = ltvToTvArray(message.payload);
+
+		console.log(payloadArray);
+
+		const addr = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_IDENTITY,
+			BT_DataType.BT_DATA_RPA
+		]);
+		if (!addr) {
+			// TBD: Throw exception?
+			return;
+		}
+
+		const volume = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_VOLUME
+		])?.value;
+
+		const mute = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_MUTE
+		])?.value;
+
+		console.log(`Volume = ${volume}, mute = ${mute}`);
+
+		// TODO: Reflect in UI when available.
+	}
+
+	handleVolumeControlFound(message) {
+		console.log(`Handle Volume Control Found`);
+
+		const payloadArray = ltvToTvArray(message.payload);
+
+		console.log(payloadArray);
+
+		const addr = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_IDENTITY,
+			BT_DataType.BT_DATA_RPA
+		]);
+		if (!addr) {
+			// TBD: Throw exception?
+			return;
+		}
+
+		// TODO: Use UI to set volume instead of fixed values
+		const sink = this.#sinks.find(i => compareTypedArray(i.addr.value.addr, addr.value.addr));
+		if (!sink) {
+			console.warn("Volume control found w/ unknown sink addr:",addr);
+			return;
+		}
+		this.setVolume(sink, 170);
+	}
+
 	handleSinkConnectivityRes(message) {
 		console.log(`Handle potential Error`);
 		// TODO: Tie RES to actual call (could be another sink)
@@ -536,6 +590,14 @@ class AssistantModel extends EventTarget {
 			case MessageSubType.SOURCE_BIG_ENC_NO_BAD_CODE:
 			console.log('No/Bad broadcast code');
 			this.getBroadcastCode(message);
+			break;
+			case MessageSubType.SOURCE_VOLUME_STATE:
+			console.log('Volume state');
+			this.handleVolumeState(message);
+			break;
+			case MessageSubType.SOURCE_VOLUME_CONTROL_FOUND:
+			console.log('Volume control found');
+			this.handleVolumeControlFound(message);
 			break;
 			default:
 			console.log(`Missing handler for EVT subType 0x${message.subType.toString(16)}`);
@@ -842,6 +904,53 @@ class AssistantModel extends EventTarget {
 		const message = {
 			type: Number(MessageType.CMD),
 			subType: MessageSubType.DISCONNECT_SINK,
+			seqNo: 123,
+			payload
+		};
+
+		this.#service.sendCMD(message);
+	}
+
+	setVolume(sink, volume) {
+		console.log("Set Volume on Sink CMD");
+
+		const { addr } = sink;
+
+		if (!addr) {
+			throw Error("Address not found in sink object!");
+		}
+
+		const tvArr = [
+			{ type: BT_DataType.BT_DATA_VOLUME, value: volume },
+			addr
+		];
+
+		const payload = tvArrayToLtv(tvArr);
+
+		const message = {
+			type: Number(MessageType.CMD),
+			subType: MessageSubType.SET_VOLUME,
+			seqNo: 123,
+			payload
+		};
+
+		this.#service.sendCMD(message);
+	}
+
+	setMute(sink, state) {
+		console.log("Set Mute/Unmute on Sink CMD");
+
+		const { addr } = sink;
+
+		if (!addr) {
+			throw Error("Address not found in sink object!");
+		}
+
+		const payload = tvArrayToLtv([addr]);
+
+		const message = {
+			type: Number(MessageType.CMD),
+			subType: state ? MessageSubType.MUTE : MessageSubType.UNMUTE,
 			seqNo: 123,
 			payload
 		};

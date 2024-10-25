@@ -39,6 +39,9 @@ export const MessageSubType = Object.freeze({
 	ADD_SOURCE:			0x07,
 	REMOVE_SOURCE:			0x08,
 	BIG_BCODE:			0x09,
+	SET_VOLUME:			0x0A,
+	MUTE:				0x0B,
+	UNMUTE:				0x0C,
 
 	RESET:				0x2A,
 
@@ -63,6 +66,8 @@ export const MessageSubType = Object.freeze({
 	SOURCE_BIG_ENC_BCODE_REQ:	0x92,
 	SOURCE_BIG_ENC_NO_DEC:		0x93,
 	SOURCE_BIG_ENC_NO_BAD_CODE:	0x94,
+	SOURCE_VOLUME_STATE:		0x95,
+	SOURCE_VOLUME_CONTROL_FOUND:	0x96,
 
 	HEARTBEAT:			0xFF,
 });
@@ -83,6 +88,8 @@ export const BT_DataType = Object.freeze({
 	BT_DATA_BROADCAST_NAME:		0x30,	// utf8 (variable len)
 
 	// The following types are created for this app (not standard)
+	BT_DATA_MUTE:			0xf3,	// uint8
+	BT_DATA_VOLUME:			0xf4,	// uint8
 	BT_DATA_BIS_SYNC:		0xf5,	// uint32
 	BT_DATA_SOURCE_ID:		0xf6,	// uint8
 	BT_DATA_BASE:			0xf7,	// uint8[] (variable len)
@@ -290,7 +297,9 @@ const parseLTVItem = (type, len, value) => {
 		case BT_DataType.BT_DATA_BROADCAST_ID:
 		case BT_DataType.BT_DATA_PA_INTERVAL:
 		case BT_DataType.BT_DATA_SID:
-		item.value = bufToInt(value, false);
+		case BT_DataType.BT_DATA_VOLUME:
+		case BT_DataType.BT_DATA_MUTE:
+			item.value = bufToInt(value, false);
 		break;
 		case BT_DataType.BT_DATA_RPA:
 		case BT_DataType.BT_DATA_IDENTITY:
@@ -393,6 +402,7 @@ export const tvArrayToLtv = arr => {
 			break;
 			case BT_DataType.BT_DATA_SID:
 			case BT_DataType.BT_DATA_SOURCE_ID:
+			case BT_DataType.BT_DATA_VOLUME:
 			outArr = uintToArray(value, 1);	//uint8
 			break;
 			case BT_DataType.BT_DATA_BROADCAST_CODE:
