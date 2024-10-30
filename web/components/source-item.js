@@ -120,9 +120,9 @@ const addrString = (addr) => {
 	const val = bufToAddressString(addr.value.addr);
 
 	if (addr.type === BT_DataType.BT_DATA_RPA) {
-		return `${val} (Unresolved)`;
+		return `${val} (random)`;
 	} else if (addr.type === BT_DataType.BT_DATA_IDENTITY) {
-		return `${val} (Resolved)`;
+		return `${val} (public)`;
 	}
 
 	return "Unknown address type";
