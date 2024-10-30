@@ -88,10 +88,10 @@ class AssistantModel extends EventTarget {
 		const source = {};
 
 		// First, fetch the address type
-		let addressType = 0;
+		let addressType = BT_DataType.BT_DATA_IDENTITY;
 		const atToken = parsedCode.find(t => t.type === 'AT');
-		if (atToken) {
-			addressType = atToken.value;
+		if (atToken?.value === 1) {
+			addressType = BT_DataType.BT_DATA_RPA;
 		}
 
 		parsedCode.forEach(token => {
@@ -100,9 +100,9 @@ class AssistantModel extends EventTarget {
 					source.addr = {
 						value: {
 							...token.value,
-							type: addressType,
+							type: 1,
 						},
-						type: BT_DataType.BT_DATA_RPA
+						type: addressType
 					}
 					break;
 				case 'BN':
@@ -129,6 +129,9 @@ class AssistantModel extends EventTarget {
 		} else {
 			console.log('Broadcast Audio URI already added');
 		}
+
+		// Always start playing source automatically when scanning QR code
+		this.addSource(source);
 	}
 
 	handleSourceFound(message) {
@@ -431,7 +434,11 @@ class AssistantModel extends EventTarget {
 			console.warn("Volume control found w/ unknown sink addr:",addr);
 			return;
 		}
-		this.setVolume(sink, 170);
+		setTimeout(() => {
+			// Delayed setVolume to prevent comm issue
+			console.log('Set volume to 170');
+			this.setVolume(sink, 170);
+		}, 500);
 	}
 
 	handleSinkConnectivityRes(message) {
