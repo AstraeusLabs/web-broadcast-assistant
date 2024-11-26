@@ -281,7 +281,7 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 	struct bt_conn *conn;
 
 	if (err != 0) {
-		LOG_WRN("Volume control service could not be discovered (%d)\n", err);
+		LOG_WRN("Volume control service could not be discovered (%d)", err);
 		restart_scanning_if_needed();
 		return;
 	}
@@ -308,6 +308,8 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 	net_buf_add_mem(evt_msg, &bt_addr_le->a, sizeof(bt_addr_t));
 
 	send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_CONTROL_FOUND, evt_msg);
+
+	restart_scanning_if_needed();
 }
 
 static void vcs_write_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
@@ -1260,8 +1262,18 @@ int connect_to_sink(bt_addr_le_t *bt_addr_le)
 	struct bt_conn *conn;
 	char addr_str[BT_ADDR_LE_STR_LEN];
 	int err;
+	struct bt_conn_le_create_param create_param = {
+		.options = (BT_CONN_LE_OPT_NONE),
+		.interval = (BT_GAP_SCAN_FAST_INTERVAL),
+		.window = (BT_GAP_SCAN_FAST_INTERVAL),
+		.interval_coded = 0,
+		.window_coded = 0,
+		.timeout = 1000, /* ms * 10 */
+	};
 	const struct bt_le_conn_param *param =
 		BT_LE_CONN_PARAM(BT_GAP_INIT_CONN_INT_MIN, BT_GAP_INIT_CONN_INT_MAX, 0, 800);
+
+	LOG_INF("Connect to sink...");
 
 	/* Stop scanning if needed */
 	if (ba_scan_target) {
@@ -1273,10 +1285,20 @@ int connect_to_sink(bt_addr_le_t *bt_addr_le)
 		}
 	}
 
+	/* Stop PA syncing if needed */
+	if (pa_syncing) {
+		LOG_WRN("Delete PA sync");
+		k_timer_stop(&pa_sync_create_timer);
+		k_work_submit(&pa_sync_delete_work);
+		pa_syncing = false;
+	}
+
+	k_sleep(K_MSEC(100)); /* sleep added to improve robustness */
+
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
 	LOG_INF("Connecting to %s...", addr_str);
 
-	err = bt_conn_le_create(bt_addr_le, BT_CONN_LE_CREATE_CONN, param, &conn);
+	err = bt_conn_le_create(bt_addr_le, &create_param, param, &conn);
 	if (err) {
 		LOG_ERR("Failed creating connection (err=%d)", err);
 		restart_scanning_if_needed();
