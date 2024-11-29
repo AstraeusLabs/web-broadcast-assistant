@@ -8,6 +8,7 @@
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/bluetooth/audio/vcp.h>
+#include <zephyr/bluetooth/audio/csip.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
 
@@ -45,13 +46,12 @@ struct scan_recv_data {
 	uint32_t broadcast_id;
 	bool has_bass;
 	bool has_pacs;
+	bool has_csis;
 };
 
 static struct k_mutex source_data_list_mutex;
 static struct bt_le_per_adv_sync *pa_sync;
 static volatile bool pa_syncing;
-
-static struct k_work pa_sync_delete_work;
 
 static K_SEM_DEFINE(sem_rem_source, 1U, 1U);
 static K_SEM_DEFINE(sem_add_source, 1U, 1U);
@@ -85,6 +85,21 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 static void vcs_write_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err);
 static void vcs_state_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t volume, uint8_t mute);
 static void vcs_flags_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t flags);
+static void vcs_discover_work_handler(struct k_work *work);
+
+/* CSIS */
+static void csip_lock_set_cb(int err);
+static void csip_release_set_cb(int err);
+static void csip_discover_cb(struct bt_conn *conn,
+			     const struct bt_csip_set_coordinator_set_member *member, int err,
+			     size_t set_count);
+static void csip_ordered_access_cb(const struct bt_csip_set_coordinator_set_info *set_info, int err,
+				  bool locked, struct bt_csip_set_coordinator_set_member *member);
+static void csis_discover_work_handler(struct k_work *work);
+
+static void pa_sync_delete_work_handler(struct k_work *work);
+static void pa_sync_create_timeout_work_handler(struct k_work *work);
+static void pa_sync_create_timer_handler(struct k_timer *dummy);
 
 static struct bt_le_scan_cb scan_callbacks = {
 	.recv = scan_recv_cb,
@@ -120,10 +135,28 @@ static struct bt_vcp_vol_ctlr_cb vcp_callbacks = {
 	.flags = vcs_flags_cb,
 };
 
+static struct bt_csip_set_coordinator_cb csip_callbacks = {
+	.lock_set = csip_lock_set_cb,
+	.release_set = csip_release_set_cb,
+	.discover = csip_discover_cb,
+	.ordered_access = csip_ordered_access_cb,
+};
+
 static uint8_t ba_scan_target; /* scan state */
 static uint32_t ba_source_broadcast_id;
 static uint8_t ba_source_id; /* Source ID of the receive state */
 static struct bt_bap_scan_delegator_recv_state ba_recv_state[CONFIG_BT_MAX_CONN] = {0};
+static struct bt_vcp_vol_ctlr *vcs_ctlr;
+static struct bt_conn *vcs_conn;
+static struct bt_conn *csis_conn;
+
+
+K_WORK_DEFINE(vcs_discover_work, vcs_discover_work_handler);
+K_WORK_DEFINE(csis_discover_work, csis_discover_work_handler);
+K_WORK_DEFINE(pa_sync_create_timeout_work, pa_sync_create_timeout_work_handler);
+K_WORK_DEFINE(pa_sync_delete_work, pa_sync_delete_work_handler);
+
+K_TIMER_DEFINE(pa_sync_create_timer, pa_sync_create_timer_handler, NULL);
 
 /*
  * Private functions
@@ -137,16 +170,7 @@ static void pa_sync_create_timeout_work_handler(struct k_work *work)
 	}
 }
 
-K_WORK_DEFINE(pa_sync_create_timeout_work, pa_sync_create_timeout_work_handler);
-
-static void pa_sync_create_timeout_handler(struct k_timer *dummy)
-{
-    k_work_submit(&pa_sync_create_timeout_work);
-}
-
-K_TIMER_DEFINE(pa_sync_create_timer, pa_sync_create_timeout_handler, NULL);
-
-static void pa_sync_delete_handler(struct k_work *work)
+static void pa_sync_delete_work_handler(struct k_work *work)
 {
 	int err;
 
@@ -156,6 +180,35 @@ static void pa_sync_delete_handler(struct k_work *work)
 	if (err) {
 		LOG_INF("bt_le_per_adv_sync_delete failed (%d)", err);
 	}
+}
+
+static void vcs_discover_work_handler(struct k_work *work)
+{
+	int err;
+
+	LOG_INF("VCS discover...");
+	err = bt_vcp_vol_ctlr_discover(vcs_conn, &vcs_ctlr);
+	if (err != 0) {
+		LOG_ERR("Failed to discover vcs (err %d)", err);
+		vcs_conn = NULL;
+	}
+}
+
+static void csis_discover_work_handler(struct k_work *work)
+{
+	int err;
+
+	LOG_INF("CSIS discover...");
+	err = bt_csip_set_coordinator_discover(csis_conn);
+	if (err != 0) {
+		LOG_ERR("bt_csip_set_coordinator_discover failed (err %d)", err);
+		csis_conn = NULL;
+	}
+}
+
+static void pa_sync_create_timer_handler(struct k_timer *dummy)
+{
+    k_work_submit(&pa_sync_create_timeout_work);
 }
 
 static void source_data_reset(void)
@@ -231,7 +284,6 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 	const bt_addr_le_t *bt_addr_le;
 	char addr_str[BT_ADDR_LE_STR_LEN];
 	struct net_buf *evt_msg;
-	struct bt_vcp_vol_ctlr *vol_ctlr;
 
 	LOG_INF("Broadcast assistant discover callback (%p, %d, %u)", (void *)conn, err, recv_state_count);
 	if (err) {
@@ -265,11 +317,19 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 
 	send_net_buf_event(MESSAGE_SUBTYPE_SINK_CONNECTED, evt_msg);
 
-	err = bt_vcp_vol_ctlr_discover(conn, &vol_ctlr);
-	if (err != 0) {
-		LOG_ERR("Failed to discover vol ctrl (err %d)", err);
-		restart_scanning_if_needed();
+	/* Discover VCS */
+	if (vcs_conn == NULL) {
+		vcs_conn = conn;
+		k_work_submit(&vcs_discover_work);
 	}
+
+	/* Discover CSIS */
+	if (csis_conn == NULL) {
+		csis_conn = conn;
+		k_work_submit(&csis_discover_work);
+	}
+
+	restart_scanning_if_needed();
 }
 
 static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t vocs_count,
@@ -282,13 +342,15 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 
 	if (err != 0) {
 		LOG_WRN("Volume control service could not be discovered (%d)", err);
-		restart_scanning_if_needed();
+		vcs_conn = NULL;
+
 		return;
 	}
 
 	if (bt_vcp_vol_ctlr_conn_get(vol_ctlr, &conn) != 0) {
 		LOG_ERR("Volume control conn error\n");
-		restart_scanning_if_needed();
+		vcs_conn = NULL;
+
 		return;
 	}
 
@@ -309,7 +371,7 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 
 	send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_CONTROL_FOUND, evt_msg);
 
-	restart_scanning_if_needed();
+	vcs_conn = NULL;
 }
 
 static void vcs_write_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
@@ -374,6 +436,104 @@ static void vcs_flags_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t flag
 	}
 
 	LOG_INF("Volume control flags 0x%02X\n", flags);
+}
+
+static void csip_lock_set_cb(int err)
+{
+	if (err != 0) {
+		LOG_ERR("Lock sets failed (%d)", err);
+		return;
+	}
+
+	LOG_INF("Set locked");
+}
+
+static void csip_release_set_cb(int err)
+{
+	if (err != 0) {
+		LOG_ERR("Lock sets failed (%d)", err);
+		return;
+	}
+
+	LOG_INF("Set released");
+}
+
+static void csip_discover_cb(struct bt_conn *conn,
+			     const struct bt_csip_set_coordinator_set_member *member,
+			     int err, size_t set_count)
+{
+	struct net_buf *evt_msg;
+	char addr_str[BT_ADDR_LE_STR_LEN];
+	const bt_addr_le_t *bt_addr_le;
+
+	if (err != 0) {
+		LOG_ERR("Coordinated Set Identification could not be discovered (%d)", err);
+		csis_conn = NULL;
+
+		return;
+	}
+
+	if (set_count == 0) {
+		LOG_WRN("Device has no sets");
+		csis_conn = NULL;
+
+		return;
+	}
+
+	LOG_INF("Found %zu sets on member[%u]", set_count, bt_conn_index(conn));
+
+	for (size_t i = 0U; i < set_count; i++) {
+		LOG_INF("CSIS[%zu]: %p", i, &member->insts[i]);
+		LOG_INF("Rank: %u", member->insts[i].info.rank);
+		LOG_INF("Set Size: %u", member->insts[i].info.set_size);
+		LOG_INF("Lockable: %u", member->insts[i].info.lockable);
+	}
+
+	/* Send send set identifier found message */
+	evt_msg = message_alloc_tx_message();
+	bt_addr_le = bt_conn_get_dst(conn);
+	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
+	LOG_DBG("Set identifier identifier from %s, rank %u, size %u",
+		addr_str, member->insts[0].info.rank, member->insts[0].info.set_size);
+
+	/* Bluetooth LE Device Address */
+	net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
+	net_buf_add_u8(evt_msg,
+		       bt_addr_le_is_identity(bt_addr_le) ? BT_DATA_IDENTITY : BT_DATA_RPA);
+	net_buf_add_u8(evt_msg, bt_addr_le->type);
+	net_buf_add_mem(evt_msg, &bt_addr_le->a, sizeof(bt_addr_t));
+
+	/* rank */
+	net_buf_add_u8(evt_msg, 2);
+	net_buf_add_u8(evt_msg, BT_DATA_SET_RANK);
+	net_buf_add_u8(evt_msg, member->insts[0].info.rank);
+
+	/* set_size */
+	net_buf_add_u8(evt_msg, 2);
+	net_buf_add_u8(evt_msg, BT_DATA_SET_SIZE);
+	net_buf_add_u8(evt_msg, member->insts[0].info.set_size);
+
+	/* sirk */
+	net_buf_add_u8(evt_msg, 1 + BT_CSIP_SIRK_SIZE);
+	net_buf_add_u8(evt_msg, BT_DATA_SIRK);
+	net_buf_add_mem(evt_msg, member->insts[0].info.sirk, BT_CSIP_SIRK_SIZE);
+
+	send_net_buf_event(MESSAGE_SUBTYPE_SET_IDENTIFIER_FOUND, evt_msg);
+
+	csis_conn = NULL;
+}
+
+static void csip_ordered_access_cb(
+	const struct bt_csip_set_coordinator_set_info *set_info, int err,
+	bool locked, struct bt_csip_set_coordinator_set_member *member)
+{
+	if (err) {
+		LOG_ERR("Ordered access failed with err %d", err);
+	} else if (locked) {
+		LOG_WRN("Cannot do ordered access as member %p is locked", member);
+	} else {
+		LOG_INF("Ordered access procedure finished");
+	}
 }
 
 static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
@@ -625,10 +785,17 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 	LOG_INF("Broadcast assistant connected callback (%p, err:%d)", (void *)conn, err);
 
 	if (err) {
+		LOG_ERR("Connected error (err %d)", err);
+	} else {
+		err = bt_conn_set_security(conn, BT_SECURITY_L2 | BT_SECURITY_FORCE_PAIR);
+		if (err) {
+			LOG_ERR("Setting security failed (err %d)", err);
+		}
+	}
+
+	if (err) {
 		const bt_addr_le_t *bt_addr_le;
 		struct net_buf *evt_msg;
-
-		LOG_ERR("Connected error (err %d)", err);
 
 		evt_msg = message_alloc_tx_message();
 		bt_addr_le = bt_conn_get_dst(conn);
@@ -646,12 +813,6 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 
 		send_net_buf_event(MESSAGE_SUBTYPE_SINK_CONNECTED, evt_msg);
 		restart_scanning_if_needed();
-		return;
-	}
-
-	err = bt_conn_set_security(conn, BT_SECURITY_L2 | BT_SECURITY_FORCE_PAIR);
-	if (err) {
-		LOG_ERR("Setting security failed (err %d)", err);
 	}
 }
 
@@ -693,7 +854,6 @@ static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum 
 			if (err) {
 				LOG_ERR("Failed to disconnect (err %d)", err);
 			}
-			restart_scanning_if_needed();
 		}
 	} else {
 		LOG_ERR("Failed to change security (err %d)", err);
@@ -701,6 +861,9 @@ static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum 
 		if (err) {
 			LOG_ERR("Failed to disconnect (err %d)", err);
 		}
+	}
+
+	if (err) {
 		restart_scanning_if_needed();
 	}
 }
@@ -775,18 +938,15 @@ static bool device_found(struct bt_data *data, void *user_data)
 		if (data->data_len < BT_UUID_SIZE_16) {
 			return true;
 		}
-
 		if (!bt_uuid_create(&adv_uuid.uuid, data->data, BT_UUID_SIZE_16)) {
 			return true;
 		}
-
 		/* Check for BASS */
 		if (bt_uuid_cmp(&adv_uuid.uuid, BT_UUID_BASS) == 0) {
 			sr_data->has_bass = true;
 
 			return true;
 		}
-
 		/* Check for Broadcast ID */
 		if (bt_uuid_cmp(&adv_uuid.uuid, BT_UUID_BROADCAST_AUDIO) == 0) {
 			if (data->data_len >= BT_UUID_SIZE_16 + BT_AUDIO_BROADCAST_ID_SIZE) {
@@ -834,6 +994,11 @@ static bool device_found(struct bt_data *data, void *user_data)
 				continue;
 			}
 		}
+
+		return true;
+	case BT_DATA_CSIS_RSI:
+		sr_data->has_csis = true;
+
 		return true;
 	default:
 		return true;
@@ -1066,7 +1231,8 @@ static bool scan_for_sink(const struct bt_le_scan_recv_info *info, struct net_bu
 		char addr_str[BT_ADDR_LE_STR_LEN];
 
 		bt_addr_le_to_str(info->addr, addr_str, sizeof(addr_str));
-		LOG_INF("Broadcast Sink Found: [\"%s\", %s]", sr_data->bt_name, addr_str);
+		LOG_INF("Broadcast Sink Found: [\"%s\", %s]%s", sr_data->bt_name, addr_str,
+			sr_data->has_csis ? ", CSIS" : "");
 
 		return true;
 	}
@@ -1601,8 +1767,6 @@ int set_mute(bt_addr_le_t *bt_addr_le, uint8_t state)
 
 int broadcast_assistant_init(void)
 {
-	k_work_init(&pa_sync_delete_work, &pa_sync_delete_handler);
-
 	int err = bt_enable(NULL);
 	if (err) {
 		LOG_ERR("Bluetooth init failed (err %d)", err);
@@ -1615,6 +1779,7 @@ int broadcast_assistant_init(void)
 	bt_le_per_adv_sync_cb_register(&pa_synced_callbacks);
 	bt_bap_broadcast_assistant_register_cb(&broadcast_assistant_callbacks);
 	bt_vcp_vol_ctlr_cb_register(&vcp_callbacks);
+	bt_csip_set_coordinator_register_cb(&csip_callbacks);
 	LOG_INF("Bluetooth scan callback registered");
 
 	k_mutex_init(&source_data_list_mutex);
