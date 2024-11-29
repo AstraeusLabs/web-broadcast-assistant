@@ -441,6 +441,35 @@ class AssistantModel extends EventTarget {
 		}, 500);
 	}
 
+	handleSetIndentifierFound(message) {
+		console.log(`Handle Set Indentifier Found`);
+
+		const payloadArray = ltvToTvArray(message.payload);
+
+		console.log(payloadArray);
+
+		const addr = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_IDENTITY,
+			BT_DataType.BT_DATA_RPA
+		]);
+		if (!addr) {
+			// TBD: Throw exception?
+			return;
+		}
+
+		const set_size = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_SET_SIZE
+		])?.value;
+
+		const rank = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_SET_RANK
+		])?.value;
+
+		console.log(`Set size = ${set_size}, rank = ${rank}`);
+
+		// TODO: Reflect in UI when available.
+	}
+
 	handleSinkConnectivityRes(message) {
 		console.log(`Handle potential Error`);
 		// TODO: Tie RES to actual call (could be another sink)
@@ -598,13 +627,17 @@ class AssistantModel extends EventTarget {
 			console.log('No/Bad broadcast code');
 			this.getBroadcastCode(message);
 			break;
-			case MessageSubType.SOURCE_VOLUME_STATE:
+			case MessageSubType.SINK_VOLUME_STATE:
 			console.log('Volume state');
 			this.handleVolumeState(message);
 			break;
-			case MessageSubType.SOURCE_VOLUME_CONTROL_FOUND:
+			case MessageSubType.SINK_VOLUME_CONTROL_FOUND:
 			console.log('Volume control found');
 			this.handleVolumeControlFound(message);
+			break;
+			case MessageSubType.SINK_SET_IDENTIFIER_FOUND:
+			console.log('Set indentifier found');
+			this.handleSetIndentifierFound(message);
 			break;
 			default:
 			console.log(`Missing handler for EVT subType 0x${message.subType.toString(16)}`);

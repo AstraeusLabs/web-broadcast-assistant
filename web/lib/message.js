@@ -66,8 +66,9 @@ export const MessageSubType = Object.freeze({
 	SOURCE_BIG_ENC_BCODE_REQ:	0x92,
 	SOURCE_BIG_ENC_NO_DEC:		0x93,
 	SOURCE_BIG_ENC_NO_BAD_CODE:	0x94,
-	SOURCE_VOLUME_STATE:		0x95,
-	SOURCE_VOLUME_CONTROL_FOUND:	0x96,
+	SINK_VOLUME_STATE:		0x95,
+	SINK_VOLUME_CONTROL_FOUND:	0x96,
+	SINK_SET_IDENTIFIER_FOUND:	0x97,
 
 	HEARTBEAT:			0xFF,
 });
@@ -88,6 +89,9 @@ export const BT_DataType = Object.freeze({
 	BT_DATA_BROADCAST_NAME:		0x30,	// utf8 (variable len)
 
 	// The following types are created for this app (not standard)
+	BT_DATA_SET_RANK:		0xf0,	// uint8
+	BT_DATA_SET_SIZE:		0xf1,	// uint8
+	BT_DATA_SIRK:			0xf2,	// uint8[6]
 	BT_DATA_MUTE:			0xf3,	// uint8
 	BT_DATA_VOLUME:			0xf4,	// uint8
 	BT_DATA_BIS_SYNC:		0xf5,	// uint32
@@ -279,49 +283,54 @@ const parseLTVItem = (type, len, value) => {
 		case BT_DataType.BT_DATA_NAME_SHORTENED:
 		case BT_DataType.BT_DATA_NAME_COMPLETE:
 		case BT_DataType.BT_DATA_BROADCAST_NAME:
-		item.value = utf8decoder.decode(value);
-		break;
+			item.value = utf8decoder.decode(value);
+			break;
+		case BT_DataType.BT_DATA_SIRK:
+			item.value = value;
+			break;
 		case BT_DataType.BT_DATA_UUID16_SOME:
 		case BT_DataType.BT_DATA_UUID16_ALL:
-		item.value = bufToValueArray(value, 2);
-		break;
+			item.value = bufToValueArray(value, 2);
+			break;
 		case BT_DataType.BT_DATA_UUID32_SOME:
 		case BT_DataType.BT_DATA_UUID32_ALL:
-		item.value = bufToValueArray(value, 4);
-		break;
+			item.value = bufToValueArray(value, 4);
+			break;
 		case BT_DataType.BT_DATA_RSSI:
 		case BT_DataType.BT_DATA_ERROR_CODE:
 		case BT_DataType.BT_DATA_SOURCE_ID:
 			item.value = bufToInt(value, true);
-		break;
+			break;
 		case BT_DataType.BT_DATA_BROADCAST_ID:
 		case BT_DataType.BT_DATA_PA_INTERVAL:
 		case BT_DataType.BT_DATA_SID:
 		case BT_DataType.BT_DATA_VOLUME:
 		case BT_DataType.BT_DATA_MUTE:
+		case BT_DataType.BT_DATA_SET_RANK:
+		case BT_DataType.BT_DATA_SET_SIZE:
 			item.value = bufToInt(value, false);
-		break;
+			break;
 		case BT_DataType.BT_DATA_RPA:
 		case BT_DataType.BT_DATA_IDENTITY:
-		item.value = {
-			type: value[0],
-			addr: value.slice(1)
-		}
-		item.value.addrStr = bufToAddressString(item.value.addr);
-		const subTypeName = keyName(MessageSubType, type);
-		console.log(subTypeName, item.value, bufToAddressString(item.value.addr));
-		break;
+			item.value = {
+				type: value[0],
+				addr: value.slice(1)
+			}
+			item.value.addrStr = bufToAddressString(item.value.addr);
+			const subTypeName = keyName(MessageSubType, type);
+			console.log(subTypeName, item.value, bufToAddressString(item.value.addr));
+			break;
 		case BT_DataType.BT_DATA_BIG_INFO:
-		item.value = parse_big_info(value);
-		console.log('BIG Info received', value, JSON.stringify(item.value, null, 2));
-		break;
+			item.value = parse_big_info(value);
+			console.log('BIG Info received', value, JSON.stringify(item.value, null, 2));
+			break;
 		case BT_DataType.BT_DATA_BASE:
-		item.value = parse_base(value);
-		console.log('BASE received', value, JSON.stringify(item.value, null, 2));
-		break;
+			item.value = parse_base(value);
+			console.log('BASE received', value, JSON.stringify(item.value, null, 2));
+			break;
 		default:
-		item.value = "UNHANDLED";
-		break;
+			item.value = "UNHANDLED";
+			break;
 	}
 
 	return item;
@@ -392,31 +401,31 @@ export const tvArrayToLtv = arr => {
 		switch (type) {
 			case BT_DataType.BT_DATA_RPA:
 			case BT_DataType.BT_DATA_IDENTITY:
-			outArr = [value.type, ...Array.from(value.addr)];
-			break;
+				outArr = [value.type, ...Array.from(value.addr)];
+				break;
 			case BT_DataType.BT_DATA_BROADCAST_ID:
-			outArr = uintToArray(value, 3);	//uint24
-			break;
+				outArr = uintToArray(value, 3);	//uint24
+				break;
 			case BT_DataType.BT_DATA_PA_INTERVAL:
-			outArr = uintToArray(value, 2); //uint16
-			break;
+				outArr = uintToArray(value, 2); //uint16
+				break;
 			case BT_DataType.BT_DATA_SID:
 			case BT_DataType.BT_DATA_SOURCE_ID:
 			case BT_DataType.BT_DATA_VOLUME:
-			outArr = uintToArray(value, 1);	//uint8
-			break;
+				outArr = uintToArray(value, 1);	//uint8
+				break;
 			case BT_DataType.BT_DATA_BROADCAST_CODE:
-			outArr = Array.from(value);	//uint8 array
-			break;
+				outArr = Array.from(value);	//uint8 array
+				break;
 			case BT_DataType.BT_DATA_BIS_SYNC:
-			outArr = [];
-			value.forEach(v => {
-				outArr.push(...uintToArray(v,4));
-			});
-			break;
+				outArr = [];
+				value.forEach(v => {
+					outArr.push(...uintToArray(v, 4));
+				});
+				break;
 			default:
-			// Don't add fields we don't handle yet
-			continue;
+				// Don't add fields we don't handle yet
+				continue;
 		}
 
 		const len = outArr.length + 1;
