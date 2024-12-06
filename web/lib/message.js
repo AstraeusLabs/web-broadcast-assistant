@@ -32,7 +32,7 @@ export const MessageSubType = Object.freeze({
 	// CMD/RES (MSB = 0)
 	START_SINK_SCAN:		0x01,
 	START_SOURCE_SCAN:		0x02,
-	START_SCAN_ALL:			0x03,
+	START_SET_MEMBER_SCAN:		0x03,
 	STOP_SCAN:			0x04,
 	CONNECT_SINK:			0x05,
 	DISCONNECT_SINK:		0x06,
@@ -69,6 +69,7 @@ export const MessageSubType = Object.freeze({
 	SINK_VOLUME_STATE:		0x95,
 	SINK_VOLUME_CONTROL_FOUND:	0x96,
 	SINK_SET_IDENTIFIER_FOUND:	0x97,
+	SET_MEMBER_FOUND:		0x98,
 
 	HEARTBEAT:			0xFF,
 });
@@ -412,9 +413,11 @@ export const tvArrayToLtv = arr => {
 			case BT_DataType.BT_DATA_SID:
 			case BT_DataType.BT_DATA_SOURCE_ID:
 			case BT_DataType.BT_DATA_VOLUME:
+			case BT_DataType.BT_DATA_SET_SIZE:
 				outArr = uintToArray(value, 1);	//uint8
 				break;
 			case BT_DataType.BT_DATA_BROADCAST_CODE:
+			case BT_DataType.BT_DATA_SIRK:
 				outArr = Array.from(value);	//uint8 array
 				break;
 			case BT_DataType.BT_DATA_BIS_SYNC:
