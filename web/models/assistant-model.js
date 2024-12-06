@@ -465,9 +465,37 @@ class AssistantModel extends EventTarget {
 			BT_DataType.BT_DATA_SET_RANK
 		])?.value;
 
-		console.log(`Set size = ${set_size}, rank = ${rank}`);
+		const sirk = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_SIRK
+		])?.value;
 
-		// TODO: Reflect in UI when available.
+		console.log(`Set size = ${set_size}, rank = ${rank}, sirk = ${sirk}`);
+
+		/**
+		setTimeout(() => {
+			// Delayed setVolume to prevent comm issue
+			this.findSetMembers(set_size, sirk);
+		}, 500);
+		*/
+	}
+
+	handleSetMemberFound(message) {
+		console.log(`Handle Set Member Found`);
+
+		const payloadArray = ltvToTvArray(message.payload);
+
+		console.log(payloadArray);
+
+		const addr = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_IDENTITY,
+			BT_DataType.BT_DATA_RPA
+		]);
+		if (!addr) {
+			// TBD: Throw exception?
+			return;
+		}
+
+		console.log(`Set member = ${addr}`);
 	}
 
 	handleSinkConnectivityRes(message) {
@@ -639,6 +667,9 @@ class AssistantModel extends EventTarget {
 			console.log('Set indentifier found');
 			this.handleSetIndentifierFound(message);
 			break;
+			case MessageSubType.SINK_SET_MEMBER_FOUND:
+			console.log('Set member found');
+			this.handleSetMemberFound(message);
 			default:
 			console.log(`Missing handler for EVT subType 0x${message.subType.toString(16)}`);
 		}
@@ -991,6 +1022,26 @@ class AssistantModel extends EventTarget {
 		const message = {
 			type: Number(MessageType.CMD),
 			subType: state ? MessageSubType.MUTE : MessageSubType.UNMUTE,
+			seqNo: 123,
+			payload
+		};
+
+		this.#service.sendCMD(message);
+	}
+
+	findSetMembers(set_size, sirk) {
+		console.log("Connect CSIS set members CMD");
+
+		const tvArr = [
+			{ type: BT_DataType.BT_DATA_SET_SIZE, value: set_size },
+			{ type: BT_DataType.BT_DATA_SIRK, value: sirk },
+		];
+
+		const payload = tvArrayToLtv(tvArr);
+
+		const message = {
+			type: Number(MessageType.CMD),
+			subType: MessageSubType.START_SET_MEMBER_SCAN,
 			seqNo: 123,
 			payload
 		};

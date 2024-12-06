@@ -31,6 +31,8 @@ struct webusb_ltv_data {
 	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
 	uint8_t num_subgroups;
 	uint32_t bis_sync[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS];
+	uint8_t csis_set_size;
+	uint8_t csis_sirk[BT_CSIP_SIRK_SIZE];
 };
 
 static struct webusb_ltv_data parsed_ltv_data;
@@ -219,6 +221,14 @@ bool ltv_found(struct bt_data *data, void *user_data)
 		_parsed->volume = data->data[0];
 		LOG_DBG("volume: %u", _parsed->src_id);
 		return true;
+	case BT_DATA_SIRK:
+		memcpy(&_parsed->csis_sirk, &data->data[0], BT_CSIP_SIRK_SIZE);
+		LOG_HEXDUMP_DBG(_parsed->csis_sirk, BT_CSIP_SIRK_SIZE, "sirk:");
+		return true;
+	case BT_DATA_SET_SIZE:
+		_parsed->csis_set_size = data->data[0];
+		LOG_DBG("CSIS set size: %u", _parsed->csis_set_size);
+		return true;
 	default:
 		LOG_DBG("Unknown type");
 	}
@@ -264,20 +274,23 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 
 	case MESSAGE_SUBTYPE_START_SINK_SCAN:
 		LOG_DBG("MESSAGE_SUBTYPE_START_SINK_SCAN");
-		msg_rc = start_scan(BROADCAST_ASSISTANT_SCAN_TARGET_SINK);
+		msg_rc = start_scan(BROADCAST_ASSISTANT_SCAN_SINK, parsed_ltv_data.csis_set_size,
+				    parsed_ltv_data.csis_sirk);
 		send_response(MESSAGE_SUBTYPE_START_SINK_SCAN, msg_seq_no, msg_rc);
 		break;
 
 	case MESSAGE_SUBTYPE_START_SOURCE_SCAN:
 		LOG_DBG("MESSAGE_SUBTYPE_START_SOURCE_SCAN");
-		msg_rc = start_scan(BROADCAST_ASSISTANT_SCAN_TARGET_SOURCE);
+		msg_rc = start_scan(BROADCAST_ASSISTANT_SCAN_SOURCE, parsed_ltv_data.csis_set_size,
+				    parsed_ltv_data.csis_sirk);
 		send_response(MESSAGE_SUBTYPE_START_SOURCE_SCAN, msg_seq_no, msg_rc);
 		break;
 
-	case MESSAGE_SUBTYPE_START_SCAN_ALL:
-		LOG_DBG("MESSAGE_SUBTYPE_START_SCAN_ALL");
-		msg_rc = start_scan(BROADCAST_ASSISTANT_SCAN_TARGET_ALL);
-		send_response(MESSAGE_SUBTYPE_START_SCAN_ALL, msg_seq_no, msg_rc);
+	case MESSAGE_SUBTYPE_START_CSIS_SCAN:
+		LOG_DBG("MESSAGE_SUBTYPE_START_CSIS_SCAN (len %u)", msg_length);
+		msg_rc = start_scan(BROADCAST_ASSISTANT_SCAN_CSIS, parsed_ltv_data.csis_set_size,
+				    parsed_ltv_data.csis_sirk);
+		send_response(MESSAGE_SUBTYPE_START_CSIS_SCAN, msg_seq_no, msg_rc);
 		break;
 
 	case MESSAGE_SUBTYPE_STOP_SCAN:
@@ -326,17 +339,6 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 		send_response(MESSAGE_SUBTYPE_BIG_BCODE, msg_seq_no, msg_rc);
 		break;
 
-	case MESSAGE_SUBTYPE_RESET:
-		LOG_DBG("MESSAGE_SUBTYPE_RESET (len %u)", msg_length);
-		msg_rc = stop_scanning();
-		send_response(MESSAGE_SUBTYPE_STOP_SCAN, msg_seq_no, msg_rc);
-		msg_rc = disconnect_unpair_all();
-		send_response(MESSAGE_SUBTYPE_RESET, msg_seq_no, msg_rc);
-		// Stop heartbeat if active
-		heartbeat_on = false;
-		k_timer_stop(&heartbeat_timer);
-		break;
-
 	case MESSAGE_SUBTYPE_SET_VOLUME:
 		LOG_DBG("MESSAGE_SUBTYPE_SET_VOLUME (vol %u, len %u)", parsed_ltv_data.volume, msg_length);
 		msg_rc = set_volume(&parsed_ltv_data.addr, parsed_ltv_data.volume);
@@ -353,6 +355,17 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 		LOG_DBG("MESSAGE_SUBTYPE_UNMUTE (len %u)", msg_length);
 		msg_rc = set_mute(&parsed_ltv_data.addr, BT_VCP_STATE_UNMUTED);
 		send_response(MESSAGE_SUBTYPE_UNMUTE, msg_seq_no, msg_rc);
+		break;
+
+	case MESSAGE_SUBTYPE_RESET:
+		LOG_DBG("MESSAGE_SUBTYPE_RESET (len %u)", msg_length);
+		msg_rc = stop_scanning();
+		send_response(MESSAGE_SUBTYPE_STOP_SCAN, msg_seq_no, msg_rc);
+		msg_rc = disconnect_unpair_all();
+		send_response(MESSAGE_SUBTYPE_RESET, msg_seq_no, msg_rc);
+		// Stop heartbeat if active
+		heartbeat_on = false;
+		k_timer_stop(&heartbeat_timer);
 		break;
 
 	default:

@@ -25,29 +25,37 @@ LOG_MODULE_REGISTER(broadcast_assistant, LOG_LEVEL_INF);
 #define PA_SYNC_SKIP                      5
 #define PA_SYNC_INTERVAL_TO_TIMEOUT_RATIO 20 /* Set the timeout relative to interval */
 
-#define MAX_NUMBER_OF_SOURCES 30
+#define MAX_NUMBER_OF_SOURCES 50
 
+typedef struct add_broadcast_code_data {
+	uint8_t src_id;
+	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
+} add_broadcast_code_data_t;
 typedef struct source_data {
 	bt_addr_le_t addr;
 	bool pa_recv;
 } source_data_t;
-
 typedef struct source_data_list {
 	uint8_t num;
 	source_data_t data[MAX_NUMBER_OF_SOURCES];
 } source_data_list_t;
 
 source_data_list_t source_data_list;
-
 struct scan_recv_data {
 	char bt_name[BT_NAME_LEN];
 	uint8_t bt_name_type;
 	char broadcast_name[BT_NAME_LEN];
 	uint32_t broadcast_id;
+	bool set_member;
 	bool has_bass;
 	bool has_pacs;
 	bool has_csis;
 };
+
+static bt_addr_le_t csis_members[CONFIG_BT_MAX_CONN];
+static uint8_t csis_members_cnt;
+static uint8_t csis_set_size;
+static uint8_t csis_sirk[BT_CSIP_SIRK_SIZE];
 
 static struct k_mutex source_data_list_mutex;
 static struct bt_le_per_adv_sync *pa_sync;
@@ -100,6 +108,7 @@ static void csis_discover_work_handler(struct k_work *work);
 static void pa_sync_delete_work_handler(struct k_work *work);
 static void pa_sync_create_timeout_work_handler(struct k_work *work);
 static void pa_sync_create_timer_handler(struct k_timer *dummy);
+static void reset_csis_data(uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE]);
 
 static struct bt_le_scan_cb scan_callbacks = {
 	.recv = scan_recv_cb,
@@ -142,7 +151,7 @@ static struct bt_csip_set_coordinator_cb csip_callbacks = {
 	.ordered_access = csip_ordered_access_cb,
 };
 
-static uint8_t ba_scan_target; /* scan state */
+static uint8_t ba_scan_mode;
 static uint32_t ba_source_broadcast_id;
 static uint8_t ba_source_id; /* Source ID of the receive state */
 static struct bt_bap_scan_delegator_recv_state ba_recv_state[CONFIG_BT_MAX_CONN] = {0};
@@ -211,7 +220,7 @@ static void pa_sync_create_timer_handler(struct k_timer *dummy)
     k_work_submit(&pa_sync_create_timeout_work);
 }
 
-static void source_data_reset(void)
+static void reset_source_data(void)
 {
 	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
 	for (int i = 0; i < MAX_NUMBER_OF_SOURCES; i++) {
@@ -435,7 +444,32 @@ static void vcs_flags_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t flag
 		return;
 	}
 
-	LOG_INF("Volume control flags 0x%02X\n", flags);
+	LOG_INF("Volume control flags 0x%02X", flags);
+}
+
+static bool csis_member_is_discovered(const bt_addr_le_t *addr)
+{
+	for (int i = 0; i < csis_members_cnt; i++) {
+		if (bt_addr_le_eq(addr, &csis_members[i])) {
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool csis_member_found(struct bt_data *data, void *user_data)
+{
+	if (bt_csip_set_coordinator_is_set_member(csis_sirk, data)) {
+		struct scan_recv_data *sr_data = (struct scan_recv_data *)user_data;
+
+		sr_data->set_member = true;
+
+		return false; /* Stop parsing */
+	}
+
+	return true; /* Continue parsing */
 }
 
 static void csip_lock_set_cb(int err)
@@ -487,6 +521,7 @@ static void csip_discover_cb(struct bt_conn *conn,
 		LOG_INF("Rank: %u", member->insts[i].info.rank);
 		LOG_INF("Set Size: %u", member->insts[i].info.set_size);
 		LOG_INF("Lockable: %u", member->insts[i].info.lockable);
+		LOG_HEXDUMP_INF(member->insts[i].info.sirk, BT_CSIP_SIRK_SIZE, "Sirk: ");
 	}
 
 	/* Send send set identifier found message */
@@ -900,20 +935,12 @@ static void restart_scanning_if_needed(void)
 {
 	int err;
 
-	if (ba_scan_target) {
+	if (ba_scan_mode) {
 		LOG_INF("Restart scanning");
 		err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
 		if (err) {
 			LOG_ERR("Scanning failed to start (err %d)", err);
-			if (ba_scan_target == BROADCAST_ASSISTANT_SCAN_TARGET_ALL) {
-				send_event(MESSAGE_SUBTYPE_START_SCAN_ALL, err);
-			} else if (ba_scan_target == BROADCAST_ASSISTANT_SCAN_TARGET_SOURCE) {
-				send_event(MESSAGE_SUBTYPE_START_SOURCE_SCAN, err);
-			} else if (ba_scan_target == BROADCAST_ASSISTANT_SCAN_TARGET_SINK) {
-				send_event(MESSAGE_SUBTYPE_START_SINK_SCAN, err);
-			}
-
-			ba_scan_target = 0;
+			ba_scan_mode = BROADCAST_ASSISTANT_SCAN_IDLE;
 		}
 	}
 }
@@ -1181,12 +1208,13 @@ static int pa_sync_create(const struct bt_le_scan_recv_info *info)
 static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_buf_simple *ad,
 			    struct scan_recv_data *sr_data)
 {
-	/* Scan for and select Broadcast Source */
+	/* Scan for Broadcast Source */
 
 	sr_data->broadcast_id = INVALID_BROADCAST_ID;
 
 	/* We are only interested in non-connectable periodic advertisers */
 	if ((info->adv_props & BT_GAP_ADV_PROP_CONNECTABLE) != 0 || info->interval == 0) {
+
 		return false;
 	}
 
@@ -1218,10 +1246,11 @@ static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_
 static bool scan_for_sink(const struct bt_le_scan_recv_info *info, struct net_buf_simple *ad,
 			  struct scan_recv_data *sr_data)
 {
-	/* Scan for and connect to Broadcast Sink */
+	/* Scan for Broadcast Sink */
 
 	/* We are only interested in connectable advertisers */
 	if ((info->adv_props & BT_GAP_ADV_PROP_CONNECTABLE) == 0) {
+
 		return false;
 	}
 
@@ -1240,15 +1269,48 @@ static bool scan_for_sink(const struct bt_le_scan_recv_info *info, struct net_bu
 	return false;
 }
 
+static bool scan_for_csis_member(const struct bt_le_scan_recv_info *info, struct net_buf_simple *ad,
+				 struct scan_recv_data *sr_data)
+{
+	/* Scan for CSIS member */
+
+	/* We are only interested in connectable advertisers */
+	if ((info->adv_props & BT_GAP_ADV_PROP_CONNECTABLE) == 0) {
+
+		return false;
+	}
+
+	/* Scanning for set members */
+	bt_data_parse(ad, csis_member_found, (void *)sr_data);
+
+	if (sr_data->set_member) {
+		if (csis_member_is_discovered(info->addr)) {
+			char addr_str[BT_ADDR_LE_STR_LEN];
+
+			bt_addr_le_to_str(info->addr, addr_str, sizeof(addr_str));
+			LOG_INF("Set member already found, %s", addr_str);
+
+			return false;
+		}
+
+		bt_addr_le_copy(&csis_members[csis_members_cnt++], info->addr);
+
+		return true;
+	}
+
+	return false;
+}
+
 static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf_simple *ad)
 {
-	struct net_buf_simple ad_clone1, ad_clone2;
+	struct net_buf_simple ad_clone1, ad_clone2, ad_clone3;
 
 	/* Clone needed for the event message because bt_data_parse consumes ad data */
 	net_buf_simple_clone(ad, &ad_clone1);
 	net_buf_simple_clone(ad, &ad_clone2);
+	net_buf_simple_clone(ad, &ad_clone3);
 
-	if (ba_scan_target & BROADCAST_ASSISTANT_SCAN_TARGET_SOURCE) {
+	if (ba_scan_mode & BROADCAST_ASSISTANT_SCAN_SOURCE) {
 		enum message_sub_type evt_msg_sub_type;
 		struct net_buf *evt_msg;
 		struct scan_recv_data sr_data = {0};
@@ -1292,7 +1354,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 		}
 	}
 
-	if (ba_scan_target & BROADCAST_ASSISTANT_SCAN_TARGET_SINK) {
+	if (ba_scan_mode & BROADCAST_ASSISTANT_SCAN_SINK) {
 		enum message_sub_type evt_msg_sub_type;
 		struct net_buf *evt_msg;
 		struct scan_recv_data sr_data = {0};
@@ -1322,71 +1384,82 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 			send_net_buf_event(evt_msg_sub_type, evt_msg);
 		}
 	}
+
+	if (ba_scan_mode & BROADCAST_ASSISTANT_SCAN_CSIS) {
+		struct scan_recv_data sr_data = {0};
+
+		if (scan_for_csis_member(info, &ad_clone3, &sr_data)) {
+			enum message_sub_type evt_msg_sub_type;
+			struct net_buf *evt_msg;
+			char addr_str[BT_ADDR_LE_STR_LEN];
+
+			bt_addr_le_to_str(info->addr, addr_str, sizeof(addr_str));
+			LOG_INF("Set member found (%u / %u), %s", csis_members_cnt, csis_set_size,
+				addr_str);
+
+			/* Send message to web */
+			evt_msg_sub_type = MESSAGE_SUBTYPE_SET_MEMBER_FOUND;
+			evt_msg = message_alloc_tx_message();
+
+			net_buf_add_mem(evt_msg, ad->data, ad->len);
+
+			/* Bluetooth LE Device Address */
+			net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
+			net_buf_add_u8(evt_msg, bt_addr_le_is_identity(info->addr) ? BT_DATA_IDENTITY : BT_DATA_RPA);
+			net_buf_add_u8(evt_msg, info->addr->type);
+			net_buf_add_mem(evt_msg, &info->addr->a, sizeof(bt_addr_t));
+
+			send_net_buf_event(evt_msg_sub_type, evt_msg);
+
+			if (csis_members_cnt == csis_set_size) {
+				LOG_INF("All members found");
+
+				/* Restore previous scan mode */
+				ba_scan_mode = ba_scan_mode & ~BROADCAST_ASSISTANT_SCAN_CSIS;
+				if (ba_scan_mode == BROADCAST_ASSISTANT_SCAN_IDLE) {
+					int err = bt_le_scan_stop();
+					if (err) {
+						LOG_ERR("bt_le_scan_stop failed with %d", err);
+					}
+				}
+			}
+		}
+	}
 }
 
 static void scan_timeout_cb(void)
 {
 	LOG_INF("Scan timeout");
 
-	ba_scan_target = 0;
+	ba_scan_mode = BROADCAST_ASSISTANT_SCAN_IDLE;
 
 	send_event(MESSAGE_SUBTYPE_STOP_SCAN, 0);
 }
 
-/*
- * Public functions
- */
-
-int start_scan(uint8_t target)
+static void add_csis_member(struct bt_conn *conn, void *data)
 {
-	if (ba_scan_target != 0) {
-		/* Scan already ongoing */
-		return 0;
-	}
+	char addr_str[BT_ADDR_LE_STR_LEN];
+	const bt_addr_le_t *bt_addr_le;
 
-	if (target == BROADCAST_ASSISTANT_SCAN_TARGET_ALL ||
-	    target == BROADCAST_ASSISTANT_SCAN_TARGET_SOURCE) {
-		source_data_reset();
-	}
+	bt_addr_le = bt_conn_get_dst(conn);
+	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
+	LOG_INF("Adding %s to set", addr_str);
 
-	int err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
-	if (err) {
-		LOG_ERR("Scanning failed to start (err %d)", err);
-		return err;
-	}
-
-	ba_scan_target = target;
-
-	LOG_INF("Scanning started (target: 0x%08x)", ba_scan_target);
-
-	return 0;
+	bt_addr_le_copy(&csis_members[csis_members_cnt++], bt_addr_le);
 }
 
-int stop_scanning(void)
+static void reset_csis_data(uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE])
 {
-	if (ba_scan_target == 0) {
-		/* No scan ongoing */
-		return 0;
-	}
+	LOG_INF("Reset CSIS data (set size: %u) ...", set_size);
+	LOG_HEXDUMP_INF(sirk, BT_CSIP_SIRK_SIZE, "sirk:");
 
-	int err = bt_le_scan_stop();
-	if (err) {
-		LOG_ERR("bt_le_scan_stop failed with %d", err);
-		return err;
-	}
-
-	ba_scan_target = 0;
-
-	LOG_INF("Scanning stopped");
-
-	if (pa_syncing) {
-		LOG_INF("Delete PA sync");
-		k_timer_stop(&pa_sync_create_timer);
-		k_work_submit(&pa_sync_delete_work);
-		pa_syncing = false;
-	}
-
-	return 0;
+	csis_set_size = set_size;
+	memcpy(csis_sirk, sirk, BT_CSIP_SIRK_SIZE);
+	/* Reset and populate based on current connections */
+	memset(csis_members, 0, sizeof(csis_members));
+	csis_members_cnt = 0;
+	/* Assume all connected devices are set members */
+	bt_conn_foreach(BT_CONN_TYPE_LE, add_csis_member, NULL);
 }
 
 static void disconnect(struct bt_conn *conn, void *data)
@@ -1401,6 +1474,155 @@ static void disconnect(struct bt_conn *conn, void *data)
 	if (err) {
 		LOG_INF("Failed to disconnect from %s", addr_str);
 	}
+}
+
+static void add_source_foreach_sink(struct bt_conn *conn, void *data)
+{
+	int err;
+	struct bt_conn_info info;
+
+	const struct bt_bap_broadcast_assistant_add_src_param *param =
+		(struct bt_bap_broadcast_assistant_add_src_param *)data;
+
+	err = bt_conn_get_info(conn, &info);
+	if (err) {
+		LOG_ERR("Failed to get conn info (err %d)", err);
+	}
+
+	if (info.state != BT_CONN_STATE_CONNECTED) {
+		LOG_WRN("Skip adding broadcast source for this conn %p (not connected)",
+			(void *)conn);
+		return;
+	}
+
+	LOG_INF("Adding broadcast source for this conn %p ...", (void *)conn);
+
+	err = k_sem_take(&sem_add_source, SYS_TIMEOUT_MS(2000));
+	if (err != 0) {
+		LOG_ERR("sem_rem_source timed out");
+	}
+
+	/* Clear recv_state */
+	memset(&ba_recv_state[bt_conn_index(conn)], 0,
+	       sizeof(struct bt_bap_scan_delegator_recv_state));
+
+	err = bt_bap_broadcast_assistant_add_src(conn, param);
+	if (err) {
+		LOG_ERR("Failed to add source (err %d)", err);
+	}
+}
+
+static void remove_source_foreach_sink(struct bt_conn *conn, void *data)
+{
+	int err;
+	struct bt_conn_info info;
+
+	const struct bt_bap_broadcast_assistant_mod_src_param *param =
+		(struct bt_bap_broadcast_assistant_mod_src_param *)data;
+
+	err = bt_conn_get_info(conn, &info);
+	if (err) {
+		LOG_ERR("Failed to get conn info (err %d)", err);
+	}
+
+	if (info.state != BT_CONN_STATE_CONNECTED) {
+		LOG_WRN("Skip removing broadcast source for this conn %p (not connected)",
+			(void *)conn);
+		return;
+	}
+
+	LOG_INF("Removing broadcast source for this conn %p ...", (void *)conn);
+
+	err = k_sem_take(&sem_rem_source, SYS_TIMEOUT_MS(2000));
+	if (err != 0) {
+		LOG_ERR("sem_rem_source timed out");
+	}
+	err = bt_bap_broadcast_assistant_mod_src(conn, param);
+	if (err) {
+		LOG_ERR("Failed to modify source (err %d)", err);
+	}
+}
+
+static void add_broadcast_code_foreach_sink(struct bt_conn *conn, void *data)
+{
+	int err;
+	struct bt_conn_info info;
+
+	add_broadcast_code_data_t *add_broadcast_code_data = (add_broadcast_code_data_t *)data;
+
+	err = bt_conn_get_info(conn, &info);
+	if (err) {
+		LOG_ERR("Failed to get conn info (err %d)", err);
+	}
+
+	if (info.state != BT_CONN_STATE_CONNECTED) {
+		LOG_WRN("Skip adding broadcast code for this conn %p (not connected)",
+			(void *)conn);
+		return;
+	}
+
+	LOG_INF("Adding broadcast code for this conn %p ...", (void *)conn);
+
+	err = bt_bap_broadcast_assistant_set_broadcast_code(
+		conn, add_broadcast_code_data->src_id, add_broadcast_code_data->broadcast_code);
+	if (err) {
+		LOG_ERR("Failed to add broadcast code (err %d)", err);
+	}
+}
+
+/*
+ * Public functions
+ */
+
+int start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE])
+{
+	/* Scan already ongoing? */
+	if (ba_scan_mode == BROADCAST_ASSISTANT_SCAN_IDLE) {
+		int err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
+		if (err) {
+			LOG_ERR("Scanning failed to start (err %d)", err);
+			return err;
+		}
+	}
+
+	if (mode == BROADCAST_ASSISTANT_SCAN_SOURCE) {
+		reset_source_data();
+	} else if (mode == BROADCAST_ASSISTANT_SCAN_CSIS) {
+		reset_csis_data(set_size, sirk);
+	}
+
+	ba_scan_mode = ba_scan_mode | mode;
+
+	LOG_INF("Scanning started (mode: 0x%08x)", ba_scan_mode);
+
+	return 0;
+}
+
+int stop_scanning(void)
+{
+	if (ba_scan_mode == BROADCAST_ASSISTANT_SCAN_IDLE) {
+		/* No scan ongoing */
+		return 0;
+	}
+
+	int err = bt_le_scan_stop();
+	if (err) {
+		LOG_ERR("bt_le_scan_stop failed with %d", err);
+		return err;
+	}
+
+	ba_scan_mode = BROADCAST_ASSISTANT_SCAN_IDLE;
+
+	LOG_INF("Scanning stopped");
+
+	if (pa_syncing) {
+		LOG_INF("Delete PA sync");
+		k_timer_stop(&pa_sync_create_timer);
+		k_work_submit(&pa_sync_delete_work);
+		pa_syncing = false;
+	}
+
+	return 0;
 }
 
 int disconnect_unpair_all(void)
@@ -1442,7 +1664,7 @@ int connect_to_sink(bt_addr_le_t *bt_addr_le)
 	LOG_INF("Connect to sink...");
 
 	/* Stop scanning if needed */
-	if (ba_scan_target) {
+	if (ba_scan_mode) {
 		LOG_INF("Stop scanning");
 		err = bt_le_scan_stop();
 		if (err) {
@@ -1518,42 +1740,6 @@ int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 	return 0;
 }
 
-static void add_source_foreach_sink(struct bt_conn *conn, void *data)
-{
-	int err;
-	struct bt_conn_info info;
-
-	const struct bt_bap_broadcast_assistant_add_src_param *param =
-		(struct bt_bap_broadcast_assistant_add_src_param *)data;
-
-	err = bt_conn_get_info(conn, &info);
-	if (err) {
-		LOG_ERR("Failed to get conn info (err %d)", err);
-	}
-
-	if (info.state != BT_CONN_STATE_CONNECTED) {
-		LOG_WRN("Skip adding broadcast source for this conn %p (not connected)",
-			(void *)conn);
-		return;
-	}
-
-	LOG_INF("Adding broadcast source for this conn %p ...", (void *)conn);
-
-	err = k_sem_take(&sem_add_source, SYS_TIMEOUT_MS(2000));
-	if (err != 0) {
-		LOG_ERR("sem_rem_source timed out");
-	}
-
-	/* Clear recv_state */
-	memset(&ba_recv_state[bt_conn_index(conn)], 0,
-	       sizeof(struct bt_bap_scan_delegator_recv_state));
-
-	err = bt_bap_broadcast_assistant_add_src(conn, param);
-	if (err) {
-		LOG_ERR("Failed to add source (err %d)", err);
-	}
-}
-
 int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr_le_t *addr,
 	       uint8_t num_subgroups, uint32_t *bis_sync)
 {
@@ -1597,37 +1783,6 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	return 0;
 }
 
-static void remove_source_foreach_sink(struct bt_conn *conn, void *data)
-{
-	int err;
-	struct bt_conn_info info;
-
-	const struct bt_bap_broadcast_assistant_mod_src_param *param =
-		(struct bt_bap_broadcast_assistant_mod_src_param *)data;
-
-	err = bt_conn_get_info(conn, &info);
-	if (err) {
-		LOG_ERR("Failed to get conn info (err %d)", err);
-	}
-
-	if (info.state != BT_CONN_STATE_CONNECTED) {
-		LOG_WRN("Skip removing broadcast source for this conn %p (not connected)",
-			(void *)conn);
-		return;
-	}
-
-	LOG_INF("Removing broadcast source for this conn %p ...", (void *)conn);
-
-	err = k_sem_take(&sem_rem_source, SYS_TIMEOUT_MS(2000));
-	if (err != 0) {
-		LOG_ERR("sem_rem_source timed out");
-	}
-	err = bt_bap_broadcast_assistant_mod_src(conn, param);
-	if (err) {
-		LOG_ERR("Failed to modify source (err %d)", err);
-	}
-}
-
 int remove_source(uint8_t source_id, uint8_t num_subgroups)
 {
 	LOG_INF("Removing broadcast source (%u, %u)...", source_id, num_subgroups);
@@ -1654,38 +1809,6 @@ int remove_source(uint8_t source_id, uint8_t num_subgroups)
 	bt_conn_foreach(BT_CONN_TYPE_LE, remove_source_foreach_sink, &param);
 
 	return 0;
-}
-
-typedef struct add_broadcast_code_data {
-	uint8_t src_id;
-	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
-} add_broadcast_code_data_t;
-
-static void add_broadcast_code_foreach_sink(struct bt_conn *conn, void *data)
-{
-	int err;
-	struct bt_conn_info info;
-
-	add_broadcast_code_data_t *add_broadcast_code_data = (add_broadcast_code_data_t *)data;
-
-	err = bt_conn_get_info(conn, &info);
-	if (err) {
-		LOG_ERR("Failed to get conn info (err %d)", err);
-	}
-
-	if (info.state != BT_CONN_STATE_CONNECTED) {
-		LOG_WRN("Skip adding broadcast code for this conn %p (not connected)",
-			(void *)conn);
-		return;
-	}
-
-	LOG_INF("Adding broadcast code for this conn %p ...", (void *)conn);
-
-	err = bt_bap_broadcast_assistant_set_broadcast_code(
-		conn, add_broadcast_code_data->src_id, add_broadcast_code_data->broadcast_code);
-	if (err) {
-		LOG_ERR("Failed to add broadcast code (err %d)", err);
-	}
 }
 
 int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE])
@@ -1783,7 +1906,7 @@ int broadcast_assistant_init(void)
 	LOG_INF("Bluetooth scan callback registered");
 
 	k_mutex_init(&source_data_list_mutex);
-	ba_scan_target = 0;
+	ba_scan_mode = BROADCAST_ASSISTANT_SCAN_IDLE;
 
 	return 0;
 }
