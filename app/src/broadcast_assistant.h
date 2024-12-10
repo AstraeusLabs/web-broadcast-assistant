@@ -36,17 +36,19 @@ enum {
 	BROADCAST_ASSISTANT_SCAN_CSIS = BIT(2),
 };
 
-int start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE]);
-int stop_scanning(void);
-int disconnect_unpair_all(void);
-int connect_to_sink(bt_addr_le_t *bt_addr_le);
-int disconnect_from_sink(bt_addr_le_t *bt_addr_le);
-int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr_le_t *addr,
-	       uint8_t num_subgroups, uint32_t *bis_sync);
-int remove_source(uint8_t source_id, uint8_t num_subgroups);
-int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE]);
-int set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume);
-int set_mute(bt_addr_le_t *bt_addr_le, uint8_t state);
+int broadcast_assistant_start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE]);
+int broadcast_assistant_stop_scanning(void);
+int broadcast_assistant_disconnect_unpair_all(void);
+int broadcast_assistant_connect_to_sink(bt_addr_le_t *bt_addr_le);
+int broadcast_assistant_disconnect_from_sink(bt_addr_le_t *bt_addr_le);
+int broadcast_assistant_add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id,
+				   bt_addr_le_t *addr, uint8_t num_subgroups, uint32_t *bis_sync);
+int broadcast_assistant_remove_source(uint8_t source_id, uint8_t num_subgroups);
+int broadcast_assistant_add_broadcast_code(
+	uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE]);
+int broadcast_assistant_set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume);
+int broadcast_assistant_set_mute(bt_addr_le_t *bt_addr_le, uint8_t state);
+int broadcast_assistant_reset(void);
 int broadcast_assistant_init(void);
 
 #endif /* __BROADCAST_ASSISTANT_H__ */
