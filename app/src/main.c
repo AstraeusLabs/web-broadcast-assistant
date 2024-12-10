@@ -14,7 +14,8 @@
 #include "webusb.h"
 #include "msosv2.h"
 #include "broadcast_assistant.h"
-#include "message_handler.h"
+#include "heartbeat.h"
+#include "message.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -30,7 +31,8 @@ int main(void)
 
 	/* Set the message handler */
 	webusb_register_message_handler(&message_handler);
-	message_handler_init();
+
+	heartbeat_init();
 
 	ret = usb_enable(NULL);
 	if (ret != 0) {

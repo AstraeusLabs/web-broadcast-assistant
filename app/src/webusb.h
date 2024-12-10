@@ -16,7 +16,7 @@
 
 #include <zephyr/types.h>
 #include <zephyr/net/buf.h>
-#include "message_handler.h"
+#include "message.h"
 
 /**
  * @brief Initializes WebUSB component

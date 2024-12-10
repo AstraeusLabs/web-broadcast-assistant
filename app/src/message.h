@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef __COMMAND_H__
-#define __COMMAND_H__
+#ifndef __MESSAGE_H__
+#define __MESSAGE_H__
 
 #include <zephyr/types.h>
 
@@ -69,11 +69,11 @@ struct webusb_message {
 	uint8_t payload[];
 } __packed;
 
-struct net_buf* message_alloc_tx_message(void);
-void send_response(enum message_sub_type stype, uint8_t seq_no, int32_t rc);
-void send_event(enum message_sub_type stype, int32_t rc);
-void send_net_buf_event(enum message_sub_type stype, struct net_buf *tx_net_buf);
+struct net_buf* message_alloc_tx(void);
+void message_send_no_paylod(enum message_type mtype, enum message_sub_type stype, uint8_t seq_no);
+void message_send_return_code(enum message_type mtype, enum message_sub_type stype, uint8_t seq_no,
+			      int32_t rc);
+void message_send_net_buf_event(enum message_sub_type stype, struct net_buf *tx_net_buf);
 void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length);
-void message_handler_init(void);
 
-#endif /* __COMMAND_H__ */
+#endif /* __MESSAGE_H__ */

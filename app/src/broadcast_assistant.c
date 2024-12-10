@@ -13,7 +13,7 @@
 #include <zephyr/sys/byteorder.h>
 
 #include "webusb.h"
-#include "message_handler.h"
+#include "message.h"
 #include "broadcast_assistant.h"
 
 LOG_MODULE_REGISTER(broadcast_assistant, LOG_LEVEL_INF);
@@ -308,7 +308,7 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 	bt_conn_unref(conn); /* TODO: Why is this needed? */
 
 	/* Succesful connected to sink */
-	evt_msg = message_alloc_tx_message();
+	evt_msg = message_alloc_tx();
 	bt_addr_le = bt_conn_get_dst(conn);
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
 	LOG_DBG("Connected to %s", addr_str);
@@ -324,7 +324,7 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 	net_buf_add_u8(evt_msg, BT_DATA_ERROR_CODE);
 	net_buf_add_le32(evt_msg, 0 /* OK */);
 
-	send_net_buf_event(MESSAGE_SUBTYPE_SINK_CONNECTED, evt_msg);
+	message_send_net_buf_event(MESSAGE_SUBTYPE_SINK_CONNECTED, evt_msg);
 
 	/* Discover VCS */
 	if (vcs_conn == NULL) {
@@ -366,7 +366,7 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 	LOG_INF("Volume control discover callback (vocs:%u, aics:%u)", vocs_count, aics_count);
 
 	/* Send volume control status message */
-	evt_msg = message_alloc_tx_message();
+	evt_msg = message_alloc_tx();
 	bt_addr_le = bt_conn_get_dst(conn);
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
 	LOG_DBG("Volume discover %s", addr_str);
@@ -378,7 +378,7 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 	net_buf_add_u8(evt_msg, bt_addr_le->type);
 	net_buf_add_mem(evt_msg, &bt_addr_le->a, sizeof(bt_addr_t));
 
-	send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_CONTROL_FOUND, evt_msg);
+	message_send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_CONTROL_FOUND, evt_msg);
 
 	vcs_conn = NULL;
 }
@@ -407,7 +407,7 @@ static void vcs_state_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t volu
 	}
 
 	/* Send volume control status message */
-	evt_msg = message_alloc_tx_message();
+	evt_msg = message_alloc_tx();
 	bt_addr_le = bt_conn_get_dst(conn);
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
 	LOG_DBG("Volume status from %s", addr_str);
@@ -434,7 +434,7 @@ static void vcs_state_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t volu
 	net_buf_add_u8(evt_msg, BT_DATA_ERROR_CODE);
 	net_buf_add_le32(evt_msg, err);
 
-	send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_STATE, evt_msg);
+	message_send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_STATE, evt_msg);
 }
 
 static void vcs_flags_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t flags)
@@ -525,7 +525,7 @@ static void csip_discover_cb(struct bt_conn *conn,
 	}
 
 	/* Send send set identifier found message */
-	evt_msg = message_alloc_tx_message();
+	evt_msg = message_alloc_tx();
 	bt_addr_le = bt_conn_get_dst(conn);
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
 	LOG_DBG("Set identifier identifier from %s, rank %u, size %u",
@@ -553,7 +553,7 @@ static void csip_discover_cb(struct bt_conn *conn,
 	net_buf_add_u8(evt_msg, BT_DATA_SIRK);
 	net_buf_add_mem(evt_msg, member->insts[0].info.sirk, BT_CSIP_SIRK_SIZE);
 
-	send_net_buf_event(MESSAGE_SUBTYPE_SET_IDENTIFIER_FOUND, evt_msg);
+	message_send_net_buf_event(MESSAGE_SUBTYPE_SET_IDENTIFIER_FOUND, evt_msg);
 
 	csis_conn = NULL;
 }
@@ -613,7 +613,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 			return;
 		}
 
-		evt_msg = message_alloc_tx_message();
+		evt_msg = message_alloc_tx();
 
 		/* Bluetooth LE Device Address */
 		bt_addr_le = bt_conn_get_dst(conn);
@@ -627,7 +627,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		net_buf_add_u8(evt_msg, BT_DATA_SOURCE_ID);
 		net_buf_add_u8(evt_msg, state->src_id);
 
-		send_net_buf_event(evt_msg_sub_type, evt_msg);
+		message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
 
 	if (state->pa_sync_state != ba_recv_state[conn_index].pa_sync_state) {
@@ -660,7 +660,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 			return;
 		}
 
-		evt_msg = message_alloc_tx_message();
+		evt_msg = message_alloc_tx();
 
 		/* Bluetooth LE Device Address */
 		bt_addr_le = bt_conn_get_dst(conn);
@@ -679,7 +679,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		net_buf_add_u8(evt_msg, BT_DATA_SOURCE_ID);
 		net_buf_add_u8(evt_msg, state->src_id);
 
-		send_net_buf_event(evt_msg_sub_type, evt_msg);
+		message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
 
 	for (int i = 0; i < state->num_subgroups; i++) {
@@ -718,7 +718,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 				      ? "MESSAGE_SUBTYPE_BIS_SYNCED"
 				      : "MESSAGE_SUBTYPE_BIS_NOT_SYNCED");
 
-		evt_msg = message_alloc_tx_message();
+		evt_msg = message_alloc_tx();
 
 		/* Bluetooth LE Device Address */
 		bt_addr_le = bt_conn_get_dst(conn);
@@ -738,7 +738,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		net_buf_add_u8(evt_msg, BT_DATA_SOURCE_ID);
 		net_buf_add_u8(evt_msg, state->src_id);
 
-		send_net_buf_event(evt_msg_sub_type, evt_msg);
+		message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 	}
 
 	/* Store latest recv_state */
@@ -748,7 +748,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 static void broadcast_assistant_recv_state_removed_cb(struct bt_conn *conn, uint8_t src_id)
 {
 	LOG_INF("Broadcast assistant recv_state_removed callback (%p, %u)", (void *)conn, src_id);
-	send_event(MESSAGE_SUBTYPE_SOURCE_REMOVED, 0);
+	message_send_return_code(MESSAGE_TYPE_EVT, MESSAGE_SUBTYPE_SOURCE_REMOVED, 0, 0);
 }
 
 static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err)
@@ -765,7 +765,7 @@ static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err)
 
 	k_sem_give(&sem_add_source);
 
-	evt_msg = message_alloc_tx_message();
+	evt_msg = message_alloc_tx();
 	bt_addr_le = bt_conn_get_dst(conn); /* sink addr */
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
 	LOG_DBG("Source added for %s", addr_str);
@@ -785,7 +785,7 @@ static void broadcast_assistant_add_src_cb(struct bt_conn *conn, int err)
 	net_buf_add_u8(evt_msg, BT_DATA_ERROR_CODE);
 	net_buf_add_le32(evt_msg, err);
 
-	send_net_buf_event(MESSAGE_SUBTYPE_SOURCE_ADDED, evt_msg);
+	message_send_net_buf_event(MESSAGE_SUBTYPE_SOURCE_ADDED, evt_msg);
 }
 
 static void broadcast_assistant_mod_src_cb(struct bt_conn *conn, int err)
@@ -832,7 +832,7 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 		const bt_addr_le_t *bt_addr_le;
 		struct net_buf *evt_msg;
 
-		evt_msg = message_alloc_tx_message();
+		evt_msg = message_alloc_tx();
 		bt_addr_le = bt_conn_get_dst(conn);
 		/* Bluetooth LE Device Address */
 		net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
@@ -846,7 +846,7 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 
 		bt_conn_unref(conn);
 
-		send_net_buf_event(MESSAGE_SUBTYPE_SINK_CONNECTED, evt_msg);
+		message_send_net_buf_event(MESSAGE_SUBTYPE_SINK_CONNECTED, evt_msg);
 		restart_scanning_if_needed();
 	}
 }
@@ -859,7 +859,7 @@ static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 	LOG_INF("Broadcast assistant disconnected callback (%p, reason:%d)", (void *)conn, reason);
 
 	bt_addr_le = bt_conn_get_dst(conn);
-	evt_msg = message_alloc_tx_message();
+	evt_msg = message_alloc_tx();
 	/* Bluetooth LE Device Address */
 	net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
 	net_buf_add_u8(evt_msg, bt_addr_le_is_identity(bt_addr_le) ? BT_DATA_IDENTITY : BT_DATA_RPA);
@@ -872,7 +872,7 @@ static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 
 	bt_conn_unref(conn);
 
-	send_net_buf_event(MESSAGE_SUBTYPE_SINK_DISCONNECTED, evt_msg);
+	message_send_net_buf_event(MESSAGE_SUBTYPE_SINK_DISCONNECTED, evt_msg);
 }
 
 static void security_changed_cb(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
@@ -916,7 +916,7 @@ static void identity_resolved_cb(struct bt_conn *conn, const bt_addr_le_t *rpa,
 	struct net_buf *evt_msg;
 
 	evt_msg_sub_type = MESSAGE_SUBTYPE_IDENTITY_RESOLVED;
-	evt_msg = message_alloc_tx_message();
+	evt_msg = message_alloc_tx();
 
 	net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
 	net_buf_add_u8(evt_msg, BT_DATA_RPA);
@@ -928,7 +928,7 @@ static void identity_resolved_cb(struct bt_conn *conn, const bt_addr_le_t *rpa,
 	net_buf_add_u8(evt_msg, identity->type);
 	net_buf_add_mem(evt_msg, &identity->a, sizeof(bt_addr_t));
 
-	send_net_buf_event(evt_msg_sub_type, evt_msg);
+	message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 }
 
 static void restart_scanning_if_needed(void)
@@ -1090,7 +1090,7 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 		source_data_set_pa_recv(info->addr);
 
 		evt_msg_sub_type = MESSAGE_SUBTYPE_SOURCE_BASE_FOUND;
-		evt_msg = message_alloc_tx_message();
+		evt_msg = message_alloc_tx();
 
 		net_buf_add_u8(evt_msg, buf->len + 1);
 		net_buf_add_u8(evt_msg, BT_DATA_BASE);
@@ -1104,7 +1104,7 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 		net_buf_add_u8(evt_msg, info->addr->type);
 		net_buf_add_mem(evt_msg, &info->addr->a, sizeof(bt_addr_t));
 
-		send_net_buf_event(evt_msg_sub_type, evt_msg);
+		message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 
 		if (pa_syncing) {
 			LOG_INF("Delete PA sync");
@@ -1130,7 +1130,7 @@ static void pa_biginfo_cb(struct bt_le_per_adv_sync *sync, const struct bt_iso_b
 		biginfo->encryption ? "encrypted" : "not encrypted");
 
 	evt_msg_sub_type = MESSAGE_SUBTYPE_SOURCE_BIG_INFO;
-	evt_msg = message_alloc_tx_message();
+	evt_msg = message_alloc_tx();
 
 	/* Bluetooth LE Device Address */
 	net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
@@ -1154,7 +1154,7 @@ static void pa_biginfo_cb(struct bt_le_per_adv_sync *sync, const struct bt_iso_b
 	net_buf_add_u8(evt_msg, biginfo->framing);
 	net_buf_add_u8(evt_msg, biginfo->encryption ? 1 : 0);
 
-	send_net_buf_event(evt_msg_sub_type, evt_msg);
+	message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 }
 
 static struct bt_le_per_adv_sync_cb pa_synced_callbacks = {
@@ -1318,7 +1318,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 		if (scan_for_source(info, &ad_clone1, &sr_data)) {
 			/* broadcast source found */
 			evt_msg_sub_type = MESSAGE_SUBTYPE_SOURCE_FOUND;
-			evt_msg = message_alloc_tx_message();
+			evt_msg = message_alloc_tx();
 
 			net_buf_add_mem(evt_msg, ad->data, ad->len);
 
@@ -1350,7 +1350,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 			net_buf_add_u8(evt_msg, BT_DATA_BROADCAST_ID);
 			net_buf_add_le32(evt_msg, sr_data.broadcast_id);
 
-			send_net_buf_event(evt_msg_sub_type, evt_msg);
+			message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 		}
 	}
 
@@ -1362,7 +1362,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 		if (scan_for_sink(info, &ad_clone2, &sr_data)) {
 			/* broadcast sink found */
 			evt_msg_sub_type = MESSAGE_SUBTYPE_SINK_FOUND;
-			evt_msg = message_alloc_tx_message();
+			evt_msg = message_alloc_tx();
 
 			net_buf_add_mem(evt_msg, ad->data, ad->len);
 
@@ -1381,7 +1381,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 			net_buf_add_u8(evt_msg, sr_data.bt_name_type);
 			net_buf_add_mem(evt_msg, &sr_data.bt_name, strlen(sr_data.bt_name));
 
-			send_net_buf_event(evt_msg_sub_type, evt_msg);
+			message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 		}
 	}
 
@@ -1399,7 +1399,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 
 			/* Send message to web */
 			evt_msg_sub_type = MESSAGE_SUBTYPE_SET_MEMBER_FOUND;
-			evt_msg = message_alloc_tx_message();
+			evt_msg = message_alloc_tx();
 
 			net_buf_add_mem(evt_msg, ad->data, ad->len);
 
@@ -1409,7 +1409,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 			net_buf_add_u8(evt_msg, info->addr->type);
 			net_buf_add_mem(evt_msg, &info->addr->a, sizeof(bt_addr_t));
 
-			send_net_buf_event(evt_msg_sub_type, evt_msg);
+			message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 
 			if (csis_members_cnt == csis_set_size) {
 				LOG_INF("All members found");
@@ -1433,7 +1433,8 @@ static void scan_timeout_cb(void)
 
 	ba_scan_mode = BROADCAST_ASSISTANT_SCAN_IDLE;
 
-	send_event(MESSAGE_SUBTYPE_STOP_SCAN, 0);
+	message_send_return_code(MESSAGE_TYPE_EVT, MESSAGE_SUBTYPE_STOP_SCAN, 0, 0);
+
 }
 
 static void add_csis_member(struct bt_conn *conn, void *data)
@@ -1574,7 +1575,7 @@ static void add_broadcast_code_foreach_sink(struct bt_conn *conn, void *data)
  * Public functions
  */
 
-int start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE])
+int broadcast_assistant_start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE])
 {
 	/* Scan already ongoing? */
 	if (ba_scan_mode == BROADCAST_ASSISTANT_SCAN_IDLE) {
@@ -1598,7 +1599,7 @@ int start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE])
 	return 0;
 }
 
-int stop_scanning(void)
+int broadcast_assistant_stop_scanning(void)
 {
 	if (ba_scan_mode == BROADCAST_ASSISTANT_SCAN_IDLE) {
 		/* No scan ongoing */
@@ -1625,7 +1626,7 @@ int stop_scanning(void)
 	return 0;
 }
 
-int disconnect_unpair_all(void)
+int broadcast_assistant_disconnect_unpair_all(void)
 {
 	int err = 0;
 
@@ -1645,7 +1646,7 @@ int disconnect_unpair_all(void)
 	return 0;
 }
 
-int connect_to_sink(bt_addr_le_t *bt_addr_le)
+int broadcast_assistant_connect_to_sink(bt_addr_le_t *bt_addr_le)
 {
 	struct bt_conn *conn;
 	char addr_str[BT_ADDR_LE_STR_LEN];
@@ -1699,7 +1700,7 @@ int connect_to_sink(bt_addr_le_t *bt_addr_le)
 	return 0;
 }
 
-int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
+int broadcast_assistant_disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 {
 	struct bt_conn *conn;
 	char addr_str[BT_ADDR_LE_STR_LEN];
@@ -1717,7 +1718,7 @@ int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 			struct net_buf *evt_msg;
 
 			LOG_ERR("Failed to disconnect (err %d)", err);
-			evt_msg = message_alloc_tx_message();
+			evt_msg = message_alloc_tx();
 			/* Bluetooth LE Device Address */
 			net_buf_add_u8(evt_msg, 1 + BT_ADDR_LE_SIZE);
 			net_buf_add_u8(evt_msg, bt_addr_le_is_identity(bt_addr_le) ? BT_DATA_IDENTITY : BT_DATA_RPA);
@@ -1728,7 +1729,7 @@ int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 			net_buf_add_u8(evt_msg, BT_DATA_ERROR_CODE);
 			net_buf_add_le32(evt_msg, err);
 
-			send_net_buf_event(MESSAGE_SUBTYPE_SINK_DISCONNECTED, evt_msg);
+			message_send_net_buf_event(MESSAGE_SUBTYPE_SINK_DISCONNECTED, evt_msg);
 		}
 
 		err = bt_unpair(BT_ID_DEFAULT, bt_addr_le);
@@ -1740,8 +1741,8 @@ int disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 	return 0;
 }
 
-int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr_le_t *addr,
-	       uint8_t num_subgroups, uint32_t *bis_sync)
+int broadcast_assistant_add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id,
+				   bt_addr_le_t *addr, uint8_t num_subgroups, uint32_t *bis_sync)
 {
 	LOG_INF("Adding broadcast source (%u)...", broadcast_id);
 
@@ -1783,7 +1784,7 @@ int add_source(uint8_t sid, uint16_t pa_interval, uint32_t broadcast_id, bt_addr
 	return 0;
 }
 
-int remove_source(uint8_t source_id, uint8_t num_subgroups)
+int broadcast_assistant_remove_source(uint8_t source_id, uint8_t num_subgroups)
 {
 	LOG_INF("Removing broadcast source (%u, %u)...", source_id, num_subgroups);
 
@@ -1811,7 +1812,8 @@ int remove_source(uint8_t source_id, uint8_t num_subgroups)
 	return 0;
 }
 
-int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE])
+int broadcast_assistant_add_broadcast_code(
+	uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE])
 {
 	add_broadcast_code_data_t add_broadcast_code_data;
 
@@ -1827,7 +1829,7 @@ int add_broadcast_code(uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BRO
 	return 0;
 }
 
-int set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume)
+int broadcast_assistant_set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume)
 {
 	struct bt_conn *conn;
 	struct bt_vcp_vol_ctlr *vol_ctlr;
@@ -1857,7 +1859,7 @@ int set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume)
 	return 0;
 }
 
-int set_mute(bt_addr_le_t *bt_addr_le, uint8_t state)
+int broadcast_assistant_set_mute(bt_addr_le_t *bt_addr_le, uint8_t state)
 {
 	struct bt_conn *conn;
 	struct bt_vcp_vol_ctlr *vol_ctlr;
@@ -1888,11 +1890,20 @@ int set_mute(bt_addr_le_t *bt_addr_le, uint8_t state)
 	return 0;
 }
 
+int broadcast_assistant_reset(void)
+{
+	broadcast_assistant_stop_scanning();
+	broadcast_assistant_disconnect_unpair_all();
+
+	return 0;
+}
+
 int broadcast_assistant_init(void)
 {
 	int err = bt_enable(NULL);
 	if (err) {
 		LOG_ERR("Bluetooth init failed (err %d)", err);
+
 		return err;
 	}
 

@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(webusb, LOG_LEVEL_ERR);
 #include <zephyr/usb/usb_device.h>
 #include <usb_descriptor.h>
 
-#include "message_handler.h"
+#include "message.h"
 #include "webusb.h"
 #include "cobs.h"
 #include "msosv2.h"
