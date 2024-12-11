@@ -87,11 +87,13 @@ class AssistantModel extends EventTarget {
 	addSourceFromBroadcastAudioURI(parsedCode) {
 		const source = {};
 
-		// First, fetch the address type
-		let addressType = BT_DataType.BT_DATA_IDENTITY;
+		// Fetch address type (AT)
 		const atToken = parsedCode.find(t => t.type === 'AT');
-		if (atToken?.value === 1) {
-			addressType = BT_DataType.BT_DATA_RPA;
+
+		// Assume 'random'/'random static' AT if not specified
+		let addressType = 1;
+		if (atToken && atToken.value !== undefined) {
+			addressType = atToken.value;
 		}
 
 		parsedCode.forEach(token => {
@@ -100,9 +102,9 @@ class AssistantModel extends EventTarget {
 					source.addr = {
 						value: {
 							...token.value,
-							type: 1,
+							type: addressType
 						},
-						type: addressType
+						type: BT_DataType.BT_DATA_IDENTITY
 					}
 					break;
 				case 'BN':
@@ -471,12 +473,10 @@ class AssistantModel extends EventTarget {
 
 		console.log(`Set size = ${set_size}, rank = ${rank}, sirk = ${sirk}`);
 
-		/**
 		setTimeout(() => {
 			// Delayed setVolume to prevent comm issue
 			this.findSetMembers(set_size, sirk);
 		}, 500);
-		*/
 	}
 
 	handleSetMemberFound(message) {

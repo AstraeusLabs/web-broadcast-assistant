@@ -113,19 +113,24 @@ template.innerHTML = `
 `;
 
 const addrString = (addr) => {
-	if (!addr) {
+	if (!addr || !addr.value) {
 		return "Unknown address";
 	}
 
 	const val = bufToAddressString(addr.value.addr);
+	const addressType = addr.value.type;
 
-	if (addr.type === BT_DataType.BT_DATA_RPA) {
-		return `${val} (random)`;
-	} else if (addr.type === BT_DataType.BT_DATA_IDENTITY) {
+	if (addressType === 0) {
 		return `${val} (public)`;
 	}
 
-	return "Unknown address type";
+	if (addressType === 1) {
+		const isStatic = (addr.value.addr[5] & 0xc0) === 0xc0;
+
+		return `${val} (random${isStatic ? ' static':''})`;
+	}
+
+	return `${val} (unknown type)`;
 }
 
 export class SourceItem extends HTMLElement {
