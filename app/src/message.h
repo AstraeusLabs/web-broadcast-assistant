@@ -19,7 +19,7 @@ enum message_sub_type {
 	/* CMD/RES (bit7 = 0) */
 	MESSAGE_SUBTYPE_START_SINK_SCAN         = 0x01,
 	MESSAGE_SUBTYPE_START_SOURCE_SCAN       = 0x02,
-	MESSAGE_SUBTYPE_START_CSIS_SCAN         = 0x03,
+	MESSAGE_SUBTYPE_START_ALL_SCAN          = 0x03,
 	MESSAGE_SUBTYPE_STOP_SCAN               = 0x04,
 	MESSAGE_SUBTYPE_CONNECT_SINK            = 0x05,
 	MESSAGE_SUBTYPE_DISCONNECT_SINK         = 0x06,
@@ -29,6 +29,7 @@ enum message_sub_type {
 	MESSAGE_SUBTYPE_SET_VOLUME              = 0x0A,
 	MESSAGE_SUBTYPE_MUTE                    = 0x0B,
 	MESSAGE_SUBTYPE_UNMUTE                  = 0x0C,
+	MESSAGE_SUBTYPE_START_CSIS_SCAN         = 0x0D,
 
 	MESSAGE_SUBTYPE_RESET                   = 0x2A,
 

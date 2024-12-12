@@ -32,7 +32,7 @@ export const MessageSubType = Object.freeze({
 	// CMD/RES (MSB = 0)
 	START_SINK_SCAN:		0x01,
 	START_SOURCE_SCAN:		0x02,
-	START_SET_MEMBER_SCAN:		0x03,
+	START_ALL_SCAN:			0x03,
 	STOP_SCAN:			0x04,
 	CONNECT_SINK:			0x05,
 	DISCONNECT_SINK:		0x06,
@@ -42,6 +42,7 @@ export const MessageSubType = Object.freeze({
 	SET_VOLUME:			0x0A,
 	MUTE:				0x0B,
 	UNMUTE:				0x0C,
+	START_SET_MEMBER_SCAN:		0x0D,
 
 	RESET:				0x2A,
 

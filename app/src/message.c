@@ -271,6 +271,13 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 					 msg_seq_no, msg_rc);
 		break;
 
+	case MESSAGE_SUBTYPE_START_ALL_SCAN:
+		LOG_DBG("START_ALL_SCAN (len %u)", msg_length);
+		/* Currently not supported */
+		message_send_return_code(MESSAGE_TYPE_RES, MESSAGE_SUBTYPE_START_ALL_SCAN,
+					 msg_seq_no, -1);
+		break;
+
 	case MESSAGE_SUBTYPE_START_CSIS_SCAN:
 		LOG_DBG("START_CSIS_SCAN (len %u)", msg_length);
 		msg_rc = broadcast_assistant_start_scan(BROADCAST_ASSISTANT_SCAN_CSIS,
