@@ -1072,6 +1072,7 @@ class AssistantModel extends EventTarget {
 		console.log("Connect to already found CSIS set members");
 
 		const connected_set_members = this.#sinks.filter(i => (i.csis && compareTypedArray(i.csis.sirk, sirk) && i.state === "connected"));
+		const unconnected_set_members = this.#sinks.filter(i => (i.csis && compareTypedArray(i.csis.sirk, sirk) && i.state ==! "connected"));
 
 		window["pairedSetMembers"] = connected_set_members.length;
 
