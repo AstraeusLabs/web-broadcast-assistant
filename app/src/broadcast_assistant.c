@@ -1284,16 +1284,19 @@ static bool scan_for_csis_member(const struct bt_le_scan_recv_info *info, struct
 	bt_data_parse(ad, csis_member_found, (void *)sr_data);
 
 	if (sr_data->set_member) {
-		if (csis_member_is_discovered(info->addr)) {
-			char addr_str[BT_ADDR_LE_STR_LEN];
+		char addr_str[BT_ADDR_LE_STR_LEN];
 
-			bt_addr_le_to_str(info->addr, addr_str, sizeof(addr_str));
-			LOG_INF("Set member already found, %s", addr_str);
+		bt_addr_le_to_str(info->addr, addr_str, sizeof(addr_str));
+
+		if (csis_member_is_discovered(info->addr)) {
+			LOG_WRN("Set member already found, %s", addr_str);
 
 			return false;
 		}
 
 		bt_addr_le_copy(&csis_members[csis_members_cnt++], info->addr);
+		LOG_INF("Set member found (%u / %u), %s", csis_members_cnt, csis_set_size,
+			addr_str);
 
 		return true;
 	}
@@ -1303,19 +1306,16 @@ static bool scan_for_csis_member(const struct bt_le_scan_recv_info *info, struct
 
 static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf_simple *ad)
 {
-	struct net_buf_simple ad_clone1, ad_clone2, ad_clone3;
-
-	/* Clone needed for the event message because bt_data_parse consumes ad data */
-	net_buf_simple_clone(ad, &ad_clone1);
-	net_buf_simple_clone(ad, &ad_clone2);
-	net_buf_simple_clone(ad, &ad_clone3);
-
 	if (ba_scan_mode & BROADCAST_ASSISTANT_SCAN_SOURCE) {
-		enum message_sub_type evt_msg_sub_type;
-		struct net_buf *evt_msg;
 		struct scan_recv_data sr_data = {0};
+		struct net_buf_simple ad_clone;
 
-		if (scan_for_source(info, &ad_clone1, &sr_data)) {
+		/* Clone needed for the event message because bt_data_parse consumes ad data */
+		net_buf_simple_clone(ad, &ad_clone);
+		if (scan_for_source(info, &ad_clone, &sr_data)) {
+			enum message_sub_type evt_msg_sub_type;
+			struct net_buf *evt_msg;
+
 			/* broadcast source found */
 			evt_msg_sub_type = MESSAGE_SUBTYPE_SOURCE_FOUND;
 			evt_msg = message_alloc_tx();
@@ -1355,11 +1355,15 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 	}
 
 	if (ba_scan_mode & BROADCAST_ASSISTANT_SCAN_SINK) {
-		enum message_sub_type evt_msg_sub_type;
-		struct net_buf *evt_msg;
 		struct scan_recv_data sr_data = {0};
+		struct net_buf_simple ad_clone;
 
-		if (scan_for_sink(info, &ad_clone2, &sr_data)) {
+		/* Clone needed for the event message because bt_data_parse consumes ad data */
+		net_buf_simple_clone(ad, &ad_clone);
+		if (scan_for_sink(info, &ad_clone, &sr_data)) {
+			enum message_sub_type evt_msg_sub_type;
+			struct net_buf *evt_msg;
+
 			/* broadcast sink found */
 			evt_msg_sub_type = MESSAGE_SUBTYPE_SINK_FOUND;
 			evt_msg = message_alloc_tx();
@@ -1387,17 +1391,15 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf
 
 	if (ba_scan_mode & BROADCAST_ASSISTANT_SCAN_CSIS) {
 		struct scan_recv_data sr_data = {0};
+		struct net_buf_simple ad_clone;
 
-		if (scan_for_csis_member(info, &ad_clone3, &sr_data)) {
+		/* Clone needed for the event message because bt_data_parse consumes ad data */
+		net_buf_simple_clone(ad, &ad_clone);
+		if (scan_for_csis_member(info, &ad_clone, &sr_data)) {
 			enum message_sub_type evt_msg_sub_type;
 			struct net_buf *evt_msg;
-			char addr_str[BT_ADDR_LE_STR_LEN];
 
-			bt_addr_le_to_str(info->addr, addr_str, sizeof(addr_str));
-			LOG_INF("Set member found (%u / %u), %s", csis_members_cnt, csis_set_size,
-				addr_str);
-
-			/* Send message to web */
+			/* csis member found */
 			evt_msg_sub_type = MESSAGE_SUBTYPE_SET_MEMBER_FOUND;
 			evt_msg = message_alloc_tx();
 
