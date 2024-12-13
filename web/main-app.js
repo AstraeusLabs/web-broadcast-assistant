@@ -158,6 +158,32 @@ button:disabled {
 	max-width: 500px;
 }
 
+
+#csispairbox {
+	display: flex;
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 100vw;
+	height: 100vh;
+
+	background: rgba(255, 255, 255, 0.8);
+	backdrop-filter: blur(10px);
+
+	z-index: 900;
+}
+
+#csispairbox.hidden {
+	display: none;
+}
+
+.csispaircontent {
+	margin: auto;
+	position: relative;
+	width: 90%;
+	max-width: 500px;
+}
+
 #splashbox {
 	display: flex;
 	position: fixed;
@@ -240,6 +266,16 @@ button:disabled {
 	</div>
 </div>
 
+<div id="csispairbox" class="hidden">
+	<div class="csispaircontent">
+		<div class="col">
+			<h2>Do you want to pair coordinated set?</h2>
+			<button id='paircsisbutton'>Yes</button>
+			<button id='cancelcsisbutton'>No</button>
+		</div>
+	</div>
+</div>
+
 <div id="splashbox">
 	<div class="splashcontent">
 		<div class="col">
@@ -293,6 +329,9 @@ export class MainApp extends HTMLElement {
 		this.bauFound = this.bauFound.bind(this);
 		this.requestBC = this.requestBC.bind(this);
 		this.bcReceived = this.bcReceived.bind(this);
+		this.sirkFound = this.sirkFound.bind(this);
+		this.pairCSIS = this.pairCSIS.bind(this);
+		this.closeCSISPair = this.closeCSISPair.bind(this);
 	}
 
 	initializeModels() {
@@ -366,6 +405,12 @@ export class MainApp extends HTMLElement {
 		const button = this.shadowRoot?.querySelector('#connect');
 		button?.addEventListener('click', WebUSBDeviceService.scan);
 
+		const pairCSISButton = this.shadowRoot?.querySelector('#paircsisbutton');
+		pairCSISButton?.addEventListener('click', this.pairCSIS);
+
+		const cancelCSISButton = this.shadowRoot?.querySelector('#cancelcsisbutton');
+		cancelCSISButton?.addEventListener('click', this.closeCSISPair);
+
 		const splashbox = this.shadowRoot?.querySelector('#splashbox');
 		WebUSBDeviceService.addEventListener('connected', () => { splashbox?.classList.add('hidden') });
 		WebUSBDeviceService.addEventListener('disconnected', () => { splashbox?.classList.remove('hidden') });
@@ -373,7 +418,6 @@ export class MainApp extends HTMLElement {
 		WebUSBDeviceService.addEventListener('connected', this.sendReset);
 
 		this.#stopScanButton = this.shadowRoot?.querySelector('#stop_scan');
-		this.#stopScanButton.addEventListener('click', this.sendStopScan);
 		this.#stopScanButton.addEventListener('click', this.sendStopScan);
 		// this.#stopScanButton.disabled = true;
 
@@ -398,6 +442,8 @@ export class MainApp extends HTMLElement {
 		this.#model.addEventListener('scan-stopped', this.scanStopped);
 		this.#model.addEventListener('sink-scan-started', this.sinkScanStarted);
 		this.#model.addEventListener('source-scan-started', this.sourceScanStarted);
+		this.#model.addEventListener('sirk-found', this.sirkFound);
+		this.#model.addEventListener('csis-pairing-complete', this.closeCSISPair);
 
 		const activityLog = this.shadowRoot?.querySelector('#activity');
 		if (this.#pageState.get('log') === 'y') {
@@ -500,6 +546,51 @@ export class MainApp extends HTMLElement {
 		const qrscannerbox = this.shadowRoot?.querySelector('#qrscannerbox');
 
 		qrscannerbox?.classList.add('hidden');
+	}
+
+	sirkFound(evt) {
+		console.log("SIRK found");
+		
+		const sirk = evt.detail.sirk;
+		const set_size = evt.detail.set_size;
+
+		if (window["pairedSetMembers"] > 0) {
+			return;
+		}
+
+		window["sirk"] = sirk;
+		window["set_size"] = set_size;
+
+		const csispairbox = this.shadowRoot?.querySelector('#csispairbox');
+
+		csispairbox?.classList.remove('hidden');
+	}
+
+	closeCSISPair() {
+		console.log("Close CSIS pairing query");
+
+		const csispairbox = this.shadowRoot?.querySelector('#csispairbox');
+
+		window["setPairingInProgress"] = 0;
+		csispairbox?.classList.add('hidden');
+	}
+
+	pairCSIS() {
+		console.log("Pairing coordinated set");
+		
+		const csispairbox = this.shadowRoot?.querySelector('#csispairbox');
+
+		const sirk = window["sirk"];
+		const set_size = window["set_size"];
+		window["setPairingInProgress"] = 1;
+		window["pairedSetMembers"] = 1;
+
+		// Pair all already-found members first
+		this.#model.handlePrefoundSetMembers(set_size, sirk);
+
+		setTimeout(() => {
+			this.#model.findSetMembers(set_size, sirk);
+		}, 500);
 	}
 
 	bauFound(evt) {
