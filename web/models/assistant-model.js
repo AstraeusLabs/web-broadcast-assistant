@@ -376,6 +376,18 @@ class AssistantModel extends EventTarget {
 			} else {
 				if (message.subType === MessageSubType.SINK_CONNECTED) {
 					sink.state = "connected";
+
+					const pairingInProgress = window["setPairingInProgress"];
+					const pairedSetMembers = window["pairedSetMembers"];
+
+					if (pairingInProgress) {
+						window["pairedSetMembers"] = pairedSetMembers + 1;
+
+						if (window["pairedSetMembers"] == window["set_size"]) {
+							this.dispatchEvent(new CustomEvent('csis-pairing-complete'));
+						}
+					}
+
 					this.dispatchEvent(new CustomEvent('sink-updated', {detail: { sink }}));
 				} else {
 					this.#sinks.splice(this.#sinks.indexOf(sink, 1));
@@ -472,11 +484,17 @@ class AssistantModel extends EventTarget {
 		])?.value;
 
 		console.log(`Set size = ${set_size}, rank = ${rank}, sirk = ${sirk}`);
+		const sink = this.#sinks.find(i => compareTypedArray(i.addr.value.addr, addr.value.addr));
 
-		setTimeout(() => {
-			// Delayed setVolume to prevent comm issue
-			this.findSetMembers(set_size, sirk);
-		}, 500);
+		if (sink) {
+		    sink.csis = {
+			sirk,
+			rank,
+			set_size
+		    };
+		}
+
+		this.dispatchEvent(new CustomEvent('sirk-found', {detail: {sirk, set_size}}));
 	}
 
 	handleSetMemberFound(message) {
@@ -495,11 +513,14 @@ class AssistantModel extends EventTarget {
 			return;
 		}
 
+		// Send Connect : Note, if the connect fails, we should rely on FW to send new "found" event
+		this.connectSink({addr});
+
 		console.log(`Set member = ${addr}`);
 	}
 
 	handleSinkConnectivityRes(message) {
-		console.log(`Handle potential Error`);
+		console.log(`Handle Sink Connectivity Response`);
 		// TODO: Tie RES to actual call (could be another sink)
 
 		const payloadArray = ltvToTvArray(message.payload);
@@ -554,6 +575,20 @@ class AssistantModel extends EventTarget {
 		}
 	}
 
+	handleStartSetMemberScanRes(message) {
+		console.log("Handle Start Set Member Scan Res");
+
+		const payloadArray = ltvToTvArray(message.payload);
+
+		const err = tvArrayFindItem(payloadArray, [
+			BT_DataType.BT_DATA_ERROR_CODE
+		])?.value;
+	
+		if (err !== 0) {
+			console.log("Error code", err);
+		}
+	}
+
 	handleRES(message) {
 		console.log(`Response message with subType 0x${message.subType.toString(16)}`);
 
@@ -585,6 +620,10 @@ class AssistantModel extends EventTarget {
 			case MessageSubType.RESET:
 			console.log('RESET response received');
 			this.dispatchEvent(new CustomEvent('scan-stopped'));
+			break;
+			case MessageSubType.START_SET_MEMBER_SCAN:
+			console.log('START_SET_MEMBER_SCAN response received');
+			this.handleStartSetMemberScanRes(message);
 			break;
 			default:
 			console.log(`Missing handler for RES subType 0x${message.subType.toString(16)}`);
@@ -667,7 +706,7 @@ class AssistantModel extends EventTarget {
 			console.log('Set indentifier found');
 			this.handleSetIndentifierFound(message);
 			break;
-			case MessageSubType.SINK_SET_MEMBER_FOUND:
+			case MessageSubType.SET_MEMBER_FOUND:
 			console.log('Set member found');
 			this.handleSetMemberFound(message);
 			default:
@@ -1027,6 +1066,24 @@ class AssistantModel extends EventTarget {
 		};
 
 		this.#service.sendCMD(message);
+	}
+
+	handlePrefoundSetMembers(set_size, sirk) {
+		console.log("Connect to already found CSIS set members");
+
+		const connected_set_members = this.#sinks.filter(i => (i.csis && compareTypedArray(i.csis.sirk, sirk) && i.state === "connected"));
+
+		window["pairedSetMembers"] = connected_set_members.length;
+
+		// If we already discovered members that are not connected yet, connect to them now
+		unconnected_set_members.forEach( s => { this.connectSink(s); });
+
+		// In case all other members were already connected before, then we just need to send off event that we are done
+		const pairedSetMembers = window["pairedSetMembers"];
+
+		if (pairedSetMembers == set_size) {
+			this.dispatchEvent(new CustomEvent('csis-pairing-complete'));
+		}
 	}
 
 	findSetMembers(set_size, sirk) {
