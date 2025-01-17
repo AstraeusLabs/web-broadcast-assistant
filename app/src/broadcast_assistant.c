@@ -305,8 +305,6 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 		return; /* return and wait for disconnected callback (assume no err) */
 	}
 
-	bt_conn_unref(conn); /* TODO: Why is this needed? */
-
 	/* Succesful connected to sink */
 	evt_msg = message_alloc_tx();
 	bt_addr_le = bt_conn_get_dst(conn);
@@ -825,6 +823,11 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 		err = bt_conn_set_security(conn, BT_SECURITY_L2 | BT_SECURITY_FORCE_PAIR);
 		if (err) {
 			LOG_ERR("Setting security failed (err %d)", err);
+
+			uint8_t disconnect_err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+			if (disconnect_err) {
+				LOG_ERR("Failed to disconnect (err %d)", disconnect_err);
+			}
 		}
 	}
 
@@ -1734,6 +1737,8 @@ int broadcast_assistant_disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 			message_send_net_buf_event(MESSAGE_SUBTYPE_SINK_DISCONNECTED, evt_msg);
 		}
 
+		bt_conn_unref(conn);
+
 		err = bt_unpair(BT_ID_DEFAULT, bt_addr_le);
 		if (err) {
 			LOG_ERR("bt_unpair failed with %d", err);
@@ -1845,8 +1850,13 @@ int broadcast_assistant_set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume)
 	}
 
 	vol_ctlr = bt_vcp_vol_ctlr_get_by_conn(conn);
+	bt_conn_unref(conn);
+
 	if (vol_ctlr == NULL) {
-		LOG_ERR("No volume control for this conn (%p)", (void *)conn);
+		char addr_str[BT_ADDR_LE_STR_LEN];
+
+		bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
+		LOG_ERR("No volume control for %s", addr_str);
 
 		return -EINVAL;
 	}
@@ -1875,8 +1885,13 @@ int broadcast_assistant_set_mute(bt_addr_le_t *bt_addr_le, uint8_t state)
 	}
 
 	vol_ctlr = bt_vcp_vol_ctlr_get_by_conn(conn);
+	bt_conn_unref(conn);
+
 	if (vol_ctlr == NULL) {
-		LOG_ERR("No volume control for this conn (%p)", (void *)conn);
+		char addr_str[BT_ADDR_LE_STR_LEN];
+
+		bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
+		LOG_ERR("No volume control for %s", addr_str);
 
 		return -EINVAL;
 	}
