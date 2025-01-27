@@ -212,6 +212,10 @@ export const BT_Meta = Object.freeze({
         CCIDList:                       0x05,
         ParentalRating:                 0x06,
         ProgramInfoURI:                 0x07,
+        AudioActiveState:               0x08,
+        BroadcastImmediateRendering:    0x09,
+        AssistedListeningStream:        0x0A,
+        BroadcastName:                  0x0B,
         ExtendedMetadata:               0xFE,
         VendorSpecific:                 0xFF
 });
@@ -277,6 +281,14 @@ const parseCodecConfLTVItem = (type, len, value) => {
 	return item;
 }
 
+const parentalRatingTxt = (val) => {
+	switch (val) {
+		case 0: 	return "No rating";
+		case 1:		return "For all ages";
+		default:	return `Rating: ${val + 3}Y and above`;
+	}
+};
+
 const parseMetaLTVItem = (type, len, value) => {
 	if (len === 0 || len != value.length) {
 		return;
@@ -287,19 +299,33 @@ const parseMetaLTVItem = (type, len, value) => {
 	const item = { type, name };
 	// For now, just parse the ones we know
 	switch (type) {
-                case BT_Meta.PreferredAudioContexts:
+		case BT_Meta.PreferredAudioContexts:
 		case BT_Meta.StreamingAudioContexts:
-                item.value = getIntAt(value, 0, 2);
+		item.value = getIntAt(value, 0, 2);
 		break;
-                case BT_Meta.ProgramInfo:
+		case BT_Meta.ProgramInfo:
 		case BT_Meta.Language:
-                const decoder = new TextDecoder();
-                item.value = decoder.decode(value);
+		case BT_Meta.ProgramInfoURI:
+		case BT_Meta.BroadcastName:
+		const decoder = new TextDecoder();
+		item.value = decoder.decode(value);
 		break;
-                case BT_Meta.CCIDList:
-                // For now, just grab and store the complete byte array as is
-                item.value = Array.from(value);
-                break;
+		case BT_Meta.CCIDList:
+		case BT_Meta.ExtendedMetadata:
+		case BT_Meta.VendorSpecific:
+		// For now, just grab and store the complete byte array as is
+		item.value = Array.from(value);
+		break;
+		case BT_Meta.ParentalRating:
+		item.value = parentalRatingTxt(getIntAt(value, 0, 1));
+		break;
+		case BT_Meta.AudioActiveState:
+		case BT_Meta.AssistedListeningStream:
+		item.value = getIntAt(value, 0, 1);
+		break;
+		case BT_Meta.BroadcastImmediateRendering:
+		item.value = true;
+		break;
 		default:
 		item.value = "UNHANDLED";
 		break;
