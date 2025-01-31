@@ -366,8 +366,9 @@ class AssistantModel extends EventTarget {
 
 		// If device already exists, just update RSSI, otherwise add to list
 		let sink = this.#sinks.find(i => compareTypedArray(i.addr.value.addr, addr.value.addr));
+
 		if (!sink) {
-			console.warn("Unknown sink connected with addr:", addr.value.addr);
+			console.warn("Unknown sink connected with addr:", addr.value.addrStr);
 		} else {
 			if (err !== 0) {
 				console.log("Error code", err);
@@ -389,9 +390,15 @@ class AssistantModel extends EventTarget {
 					}
 
 					this.dispatchEvent(new CustomEvent('sink-updated', {detail: { sink }}));
-				} else {
-					this.#sinks.splice(this.#sinks.indexOf(sink, 1));
+				} else if (message.subType === MessageSubType.SINK_DISCONNECTED) {
+					const index = this.#sinks.indexOf(sink);
+					if (index !== -1) {
+						this.#sinks.splice(index, 1);
+					}
+
 					this.dispatchEvent(new CustomEvent('sink-disconnected', {detail: { sink }}));
+				} else {
+					console.warn("Unknown message subType:", message.subType);
 				}
 			}
 		}
