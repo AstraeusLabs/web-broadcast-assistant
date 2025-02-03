@@ -30,6 +30,7 @@ enum message_sub_type {
 	MESSAGE_SUBTYPE_MUTE                    = 0x0B,
 	MESSAGE_SUBTYPE_UNMUTE                  = 0x0C,
 	MESSAGE_SUBTYPE_START_CSIS_SCAN         = 0x0D,
+	MESSAGE_SUBTYPE_PA_SYNC                 = 0x0E,
 
 	MESSAGE_SUBTYPE_RESET                   = 0x2A,
 

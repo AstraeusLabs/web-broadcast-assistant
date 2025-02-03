@@ -31,12 +31,15 @@ typedef struct add_broadcast_code_data {
 	uint8_t src_id;
 	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
 } add_broadcast_code_data_t;
+
 typedef struct source_data {
 	bt_addr_le_t addr;
-	bool pa_recv;
+	uint8_t pa_attempt_cd; /* Periodic advertising sync countdown */
 } source_data_t;
+
 typedef struct source_data_list {
 	uint8_t num;
+	uint8_t pa_attempt;
 	source_data_t data[MAX_NUMBER_OF_SOURCES];
 } source_data_list_t;
 
@@ -220,68 +223,66 @@ static void pa_sync_create_timer_handler(struct k_timer *dummy)
     k_work_submit(&pa_sync_create_timeout_work);
 }
 
-static void reset_source_data(void)
+static void reset_source_data(uint8_t pa_attempt)
 {
 	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
 	for (int i = 0; i < MAX_NUMBER_OF_SOURCES; i++) {
 		bt_addr_le_copy(&source_data_list.data[i].addr, BT_ADDR_LE_NONE);
-		source_data_list.data[i].pa_recv = false;
-
+		source_data_list.data[source_data_list.num].pa_attempt_cd = 0;
 	}
+
 	source_data_list.num = 0;
+	source_data_list.pa_attempt = pa_attempt;
 	k_mutex_unlock(&source_data_list_mutex);
 }
 
-static void source_data_add(const bt_addr_le_t *addr)
+static source_data_t *source_data_get(const bt_addr_le_t *addr)
 {
-	int i;
-	bool new_source = true;
-	char addr_str[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
+	source_data_t *source_data = NULL;
 
 	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
-	for (i = 0; i < source_data_list.num; i++) {
+	for (int i = 0; i < source_data_list.num; i++) {
 		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0) {
-			LOG_DBG("Source already added (%s)", addr_str);
-			new_source = false;
+			source_data = &source_data_list.data[i];
 			break;
 		}
 	}
 
-	if (new_source && i < MAX_NUMBER_OF_SOURCES) {
-		bt_addr_le_copy(&source_data_list.data[i].addr, addr);
-		source_data_list.data[i].pa_recv = false;
-		source_data_list.num++;
+	k_mutex_unlock(&source_data_list_mutex);
+
+	return source_data;
+}
+
+static source_data_t *source_data_add(const bt_addr_le_t *addr, uint8_t sid, uint32_t interval)
+{
+	source_data_t *source_data = NULL;
+
+	if (source_data_list.num < MAX_NUMBER_OF_SOURCES) {
+		char addr_str[BT_ADDR_LE_STR_LEN];
+
+		bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
+
+		k_mutex_lock(&source_data_list_mutex, K_FOREVER);
+		bt_addr_le_copy(&source_data_list.data[source_data_list.num].addr, addr);
+		source_data_list.data[source_data_list.num].pa_attempt_cd =
+			source_data_list.pa_attempt;
+
 		LOG_INF("Source added (%s), (%u)", addr_str, source_data_list.num);
+		source_data = &source_data_list.data[source_data_list.num];
+
+		source_data_list.num++;
+		k_mutex_unlock(&source_data_list_mutex);
 	}
 
-	k_mutex_unlock(&source_data_list_mutex);
+	return source_data;
 }
 
-static bool source_data_get_pa_recv(const bt_addr_le_t *addr)
-{
-	bool pa_recv = false;
-
-	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
-	for (int i = 0; i < source_data_list.num; i++) {
-		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0 &&
-		    source_data_list.data[i].pa_recv) {
-			pa_recv = true;
-			break;
-		}
-	}
-	k_mutex_unlock(&source_data_list_mutex);
-
-	return pa_recv;
-}
-
-static void source_data_set_pa_recv(const bt_addr_le_t *addr)
+static void source_data_clr_pa_attempt_cd(const bt_addr_le_t *addr)
 {
 	k_mutex_lock(&source_data_list_mutex, K_FOREVER);
 	for (int i = 0; i < source_data_list.num; i++) {
 		if (bt_addr_le_cmp(addr, &source_data_list.data[i].addr) == 0) {
-			source_data_list.data[i].pa_recv = true;
+			source_data_list.data[i].pa_attempt_cd = 0;
 			break;
 		}
 	}
@@ -1090,7 +1091,7 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 		struct net_buf *evt_msg;
 
 		LOG_INF("BASE found");
-		source_data_set_pa_recv(info->addr);
+		source_data_clr_pa_attempt_cd(info->addr);
 
 		evt_msg_sub_type = MESSAGE_SUBTYPE_SOURCE_BASE_FOUND;
 		evt_msg = message_alloc_tx();
@@ -1189,15 +1190,15 @@ static uint16_t interval_to_sync_timeout(uint16_t pa_interval)
 	return pa_timeout;
 }
 
-static int pa_sync_create(const struct bt_le_scan_recv_info *info)
+static int pa_sync_create(bt_addr_le_t *addr, uint8_t sid, uint32_t interval)
 {
 	struct bt_le_per_adv_sync_param per_adv_sync_param = {0};
 
-	bt_addr_le_copy(&per_adv_sync_param.addr, info->addr);
+	bt_addr_le_copy(&per_adv_sync_param.addr, addr);
 	per_adv_sync_param.options = BT_LE_PER_ADV_SYNC_OPT_FILTER_DUPLICATE;
-	per_adv_sync_param.sid = info->sid;
+	per_adv_sync_param.sid = sid;
 	per_adv_sync_param.skip = PA_SYNC_SKIP;
-	per_adv_sync_param.timeout = interval_to_sync_timeout(info->interval);
+	per_adv_sync_param.timeout = interval_to_sync_timeout(interval);
 
 	uint16_t create_timeout_duration_ms;
 
@@ -1227,16 +1228,29 @@ static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_
 		LOG_DBG("Broadcast Source Found [name, b_name, b_id] = [\"%s\", \"%s\", 0x%06x]",
 			sr_data->bt_name, sr_data->broadcast_name, sr_data->broadcast_id);
 
-		source_data_add(info->addr);
+		source_data_t *source_data;
 
-		if (!pa_syncing && !source_data_get_pa_recv(info->addr)) {
-			LOG_INF("PA sync create (b_id = 0x%06x, \"%s\")", sr_data->broadcast_id,
-				sr_data->broadcast_name);
-			int err = pa_sync_create(info);
-			if (err != 0) {
-				LOG_INF("Could not create Broadcast PA sync: %d", err);
-			} else {
-				pa_syncing = true;
+		source_data = source_data_get(info->addr);
+		if (source_data == NULL) {
+			/* New source */
+			source_data = source_data_add(info->addr, info->sid, info->interval);
+		}
+
+		/* Already PA syncing */
+		if (!pa_syncing) {
+			/* Source data alvailable and PA sync allowed? */
+			if (source_data != NULL && source_data->pa_attempt_cd > 0) {
+				LOG_INF("PA sync create (b_id = 0x%06x, \"%s\", cd = %u)",
+					sr_data->broadcast_id, sr_data->broadcast_name,
+					source_data->pa_attempt_cd);
+				int err = pa_sync_create(&source_data->addr, info->sid,
+							 info->interval);
+				if (err != 0) {
+					LOG_INF("Could not create Broadcast PA sync: %d", err);
+				} else {
+					pa_syncing = true;
+					source_data->pa_attempt_cd--;
+				}
 			}
 		}
 
@@ -1580,7 +1594,8 @@ static void add_broadcast_code_foreach_sink(struct bt_conn *conn, void *data)
  * Public functions
  */
 
-int broadcast_assistant_start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE])
+int broadcast_assistant_start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE],
+				   uint8_t pa_attempt)
 {
 	/* Scan already ongoing? */
 	if (ba_scan_mode == BROADCAST_ASSISTANT_SCAN_IDLE) {
@@ -1592,7 +1607,7 @@ int broadcast_assistant_start_scan(uint8_t mode, uint8_t set_size, uint8_t sirk[
 	}
 
 	if (mode == BROADCAST_ASSISTANT_SCAN_SOURCE) {
-		reset_source_data();
+		reset_source_data(pa_attempt);
 	} else if (mode == BROADCAST_ASSISTANT_SCAN_CSIS) {
 		reset_csis_data(set_size, sirk);
 	}
@@ -1787,6 +1802,41 @@ int broadcast_assistant_add_source(uint8_t sid, uint16_t pa_interval, uint32_t b
 	param.subgroups = subgroup;
 
 	bt_conn_foreach(BT_CONN_TYPE_LE, add_source_foreach_sink, &param);
+
+	return 0;
+}
+
+int broadcast_assistant_pa_sync(bt_addr_le_t *addr, uint8_t sid, uint16_t interval)
+{
+	LOG_INF("PA sync to broadcast source...");
+
+	source_data_t *source_data;
+	int err;
+
+	source_data = source_data_get(addr);
+	if (source_data == NULL) {
+		LOG_ERR("Unknown source data");
+
+		return -EINVAL;
+	}
+
+	if (pa_syncing) {
+		LOG_ERR("Already PA syncing");
+
+		return -EBUSY;
+	}
+
+
+	LOG_INF("PA sync create");
+
+	err = pa_sync_create(&source_data->addr, sid, interval);
+	if (err != 0) {
+		LOG_ERR("Could not create Broadcast PA sync: %d", err);
+
+		return err;
+	}
+
+	pa_syncing = true;
 
 	return 0;
 }
