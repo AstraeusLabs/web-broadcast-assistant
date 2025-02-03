@@ -23,6 +23,8 @@ LOG_MODULE_REGISTER(message_handler, LOG_LEVEL_INF);
 NET_BUF_POOL_DEFINE(command_tx_msg_pool, CONFIG_TX_MSG_MAX_MESSAGES,
 		    sizeof(struct webusb_message) + CONFIG_TX_MSG_MAX_PAYLOAD_LEN, 0, NULL);
 
+#define DEFAULT_PA_SYNC_ATTEMPT 0
+
 struct webusb_ltv_data {
 	uint8_t adv_sid;
 	uint16_t pa_interval;
@@ -35,6 +37,7 @@ struct webusb_ltv_data {
 	uint32_t bis_sync[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS];
 	uint8_t csis_set_size;
 	uint8_t csis_sirk[BT_CSIP_SIRK_SIZE];
+	uint8_t pa_sync_attempt;
 };
 
 static struct webusb_ltv_data parsed_ltv_data;
@@ -129,6 +132,10 @@ static bool message_ltv_found(struct bt_data *data, void *user_data)
 	case BT_DATA_SET_SIZE:
 		_parsed->csis_set_size = data->data[0];
 		LOG_DBG("CSIS set size: %u", _parsed->csis_set_size);
+		return true;
+	case BT_DATA_PA_SYNC_ATTEMPT:
+		_parsed->pa_sync_attempt = data->data[0];
+		LOG_DBG("PA sync attemp: %u", _parsed->pa_sync_attempt);
 		return true;
 	default:
 		LOG_DBG("Unknown type");
@@ -243,6 +250,7 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 	msg_net_buf.__buf = msg_ptr->payload;
 
 	memset(&parsed_ltv_data, 0, sizeof(parsed_ltv_data));
+	parsed_ltv_data.pa_sync_attempt = DEFAULT_PA_SYNC_ATTEMPT;
 	bt_data_parse(&msg_net_buf, message_ltv_found, (void *)&parsed_ltv_data);
 
 	switch (msg_sub_type) {
@@ -256,8 +264,8 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 	case MESSAGE_SUBTYPE_START_SINK_SCAN:
 		LOG_DBG("START_SINK_SCAN (len %u)", msg_length);
 		msg_rc = broadcast_assistant_start_scan(BROADCAST_ASSISTANT_SCAN_SINK,
-							parsed_ltv_data.csis_set_size,
-							parsed_ltv_data.csis_sirk);
+							0 /* not used*/, 0 /* not used*/,
+							0 /* not used*/);
 		message_send_return_code(MESSAGE_TYPE_RES, MESSAGE_SUBTYPE_START_SINK_SCAN,
 					 msg_seq_no, msg_rc);
 		break;
@@ -265,8 +273,8 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 	case MESSAGE_SUBTYPE_START_SOURCE_SCAN:
 		LOG_DBG("START_SOURCE_SCAN (len %u)", msg_length);
 		msg_rc = broadcast_assistant_start_scan(BROADCAST_ASSISTANT_SCAN_SOURCE,
-							parsed_ltv_data.csis_set_size,
-							parsed_ltv_data.csis_sirk);
+							0 /* not used*/, 0 /* not used*/,
+							parsed_ltv_data.pa_sync_attempt);
 		message_send_return_code(MESSAGE_TYPE_RES, MESSAGE_SUBTYPE_START_SOURCE_SCAN,
 					 msg_seq_no, msg_rc);
 		break;
@@ -282,7 +290,7 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 		LOG_DBG("START_CSIS_SCAN (len %u)", msg_length);
 		msg_rc = broadcast_assistant_start_scan(BROADCAST_ASSISTANT_SCAN_CSIS,
 							parsed_ltv_data.csis_set_size,
-							parsed_ltv_data.csis_sirk);
+							parsed_ltv_data.csis_sirk, 0 /* not used*/);
 		message_send_return_code(MESSAGE_TYPE_RES, MESSAGE_SUBTYPE_START_CSIS_SCAN,
 					 msg_seq_no, msg_rc);
 		break;
@@ -315,6 +323,14 @@ void message_handler(struct webusb_message *msg_ptr, uint16_t msg_length)
 			parsed_ltv_data.broadcast_id, &parsed_ltv_data.addr,
 			parsed_ltv_data.num_subgroups, parsed_ltv_data.bis_sync);
 		message_send_return_code(MESSAGE_TYPE_RES, MESSAGE_SUBTYPE_ADD_SOURCE, msg_seq_no,
+					 msg_rc);
+		break;
+
+	case MESSAGE_SUBTYPE_PA_SYNC:
+		LOG_DBG("PA_SYNC (len %u)", msg_length);
+		msg_rc = broadcast_assistant_pa_sync(&parsed_ltv_data.addr, parsed_ltv_data.adv_sid,
+						     parsed_ltv_data.pa_interval);
+		message_send_return_code(MESSAGE_TYPE_RES, MESSAGE_SUBTYPE_PA_SYNC, msg_seq_no,
 					 msg_rc);
 		break;
 

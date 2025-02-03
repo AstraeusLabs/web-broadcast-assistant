@@ -43,6 +43,7 @@ export const MessageSubType = Object.freeze({
 	MUTE:				0x0B,
 	UNMUTE:				0x0C,
 	START_SET_MEMBER_SCAN:		0x0D,
+	START_PA_SYNC:			0x0E,
 
 	RESET:				0x2A,
 
@@ -91,6 +92,7 @@ export const BT_DataType = Object.freeze({
 	BT_DATA_BROADCAST_NAME:		0x30,	// utf8 (variable len)
 
 	// The following types are created for this app (not standard)
+	BT_DATA_PA_SYNC_ATTEMPT:	0xef,	// uint8
 	BT_DATA_SET_RANK:		0xf0,	// uint8
 	BT_DATA_SET_SIZE:		0xf1,	// uint8
 	BT_DATA_SIRK:			0xf2,	// uint8[6]
