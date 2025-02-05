@@ -776,7 +776,10 @@ class AssistantModel extends EventTarget {
 
 		this.#service.sendCMD(message)
 	}
+
 	startSinkScan() {
+		this.clearSinkList();
+
 		console.log("Sending Start Sink Scan CMD")
 
 		const message = {
@@ -790,6 +793,8 @@ class AssistantModel extends EventTarget {
 	}
 
 	startSourceScan() {
+		this.clearSourceList();
+
 		console.log("Sending Start Source Scan CMD")
 
 		const message = {
@@ -1112,6 +1117,20 @@ class AssistantModel extends EventTarget {
 		};
 
 		this.#service.sendCMD(message);
+	}
+
+	clearSinkList() {
+		this.#sinks = this.#sinks.filter(i => (i.state === "connected"));
+		console.log(`Sink list cleared`);
+
+		this.dispatchEvent(new CustomEvent('sink-list-cleared'));
+	}
+
+	clearSourceList() {
+		this.#sources = this.#sources.filter(i => i.state === "selected");
+		console.log(`Source list cleared`);
+
+		this.dispatchEvent(new CustomEvent('source-list-cleared'));
 	}
 }
 

@@ -66,6 +66,7 @@ export class SinkDeviceList extends HTMLElement {
 		this.setFilter = this.setFilter.bind(this);
 		this.applyFilter = this.applyFilter.bind(this);
 
+		this.sinkClearList = this.sinkClearList.bind(this);
 		this.sinkFound = this.sinkFound.bind(this);
 		this.sinkUpdated = this.sinkUpdated.bind(this);
 		this.sinkDisconnected = this.sinkDisconnected.bind(this);
@@ -84,6 +85,7 @@ export class SinkDeviceList extends HTMLElement {
 
 		this.#model = AssistantModel.getInstance();
 
+		this.#model.addEventListener('sink-list-cleared', this.sinkClearList)
 		this.#model.addEventListener('sink-found', this.sinkFound)
 		this.#model.addEventListener('sink-updated', this.sinkUpdated)
 		this.#model.addEventListener('sink-disconnected', this.sinkDisconnected)
@@ -159,6 +161,16 @@ export class SinkDeviceList extends HTMLElement {
 		[...elements]
 			.sort((a, b) => b.getModel().rssi - a.getModel().rssi)
 			.forEach(node => { node.style.order=order++ });
+	}
+
+	sinkClearList(evt) {
+		const elements = Array.from(this.#list.querySelectorAll('sink-item'));
+
+		elements.forEach(i => {
+			if (i.getModel().state !== "connected") {
+				i.remove();
+			}
+		});
 	}
 
 	sinkFound(evt) {

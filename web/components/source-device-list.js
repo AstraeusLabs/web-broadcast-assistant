@@ -67,6 +67,7 @@ export class SourceDeviceList extends HTMLElement {
 		this.setFilter = this.setFilter.bind(this);
 		this.applyFilter = this.applyFilter.bind(this);
 
+		this.sourceClearList = this.sourceClearList.bind(this);
 		this.sourceFound = this.sourceFound.bind(this);
 		this.sourceUpdated = this.sourceUpdated.bind(this);
 		this.baseUpdated = this.baseUpdated.bind(this);
@@ -86,6 +87,7 @@ export class SourceDeviceList extends HTMLElement {
 
 		this.#model = AssistantModel.getInstance();
 
+		this.#model.addEventListener('source-list-cleared', this.sourceClearList)
 		this.#model.addEventListener('source-found', this.sourceFound);
 		this.#model.addEventListener('source-updated', this.sourceUpdated);
 		this.#model.addEventListener('base-updated', this.baseUpdated);
@@ -152,6 +154,16 @@ export class SourceDeviceList extends HTMLElement {
 				i.classList.remove('hidden');
 			} else {
 				i.classList.add('hidden');
+			}
+		});
+	}
+
+	sourceClearList(evt) {
+		const elements = Array.from(this.#list.querySelectorAll('source-item'));
+
+		elements.forEach(i => {
+			if (i.getModel().state !== "selected") {
+				i.remove();
 			}
 		});
 	}
