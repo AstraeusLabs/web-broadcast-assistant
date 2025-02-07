@@ -15,7 +15,7 @@
 #define __WEBUSB_SERIAL_H__
 
 #include <zephyr/types.h>
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include "message.h"
 
 /**

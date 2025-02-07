@@ -8,7 +8,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/bluetooth/audio/vcp.h>
@@ -32,7 +32,7 @@ struct webusb_ltv_data {
 	bt_addr_le_t addr;
 	uint8_t src_id;
 	uint8_t volume;
-	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
+	uint8_t broadcast_code[BT_ISO_BROADCAST_CODE_SIZE];
 	uint8_t num_subgroups;
 	uint32_t bis_sync[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS];
 	uint8_t csis_set_size;
@@ -112,8 +112,8 @@ static bool message_ltv_found(struct bt_data *data, void *user_data)
 		LOG_DBG("src_id: %u", _parsed->src_id);
 		return true;
 	case BT_DATA_BROADCAST_CODE:
-		memcpy(&_parsed->broadcast_code, &data->data[0], BT_AUDIO_BROADCAST_CODE_SIZE);
-		LOG_HEXDUMP_DBG(_parsed->broadcast_code, BT_AUDIO_BROADCAST_CODE_SIZE,
+		memcpy(&_parsed->broadcast_code, &data->data[0], BT_ISO_BROADCAST_CODE_SIZE);
+		LOG_HEXDUMP_DBG(_parsed->broadcast_code, BT_ISO_BROADCAST_CODE_SIZE,
 				"broadcast code:");
 		return true;
 	case BT_DATA_BIS_SYNC:
