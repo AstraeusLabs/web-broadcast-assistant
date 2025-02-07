@@ -16,6 +16,9 @@
 #include "message.h"
 #include "broadcast_assistant.h"
 
+#include "host/conn_internal.h"
+#include "host/hci_core.h"
+
 LOG_MODULE_REGISTER(broadcast_assistant, LOG_LEVEL_INF);
 
 #define BT_NAME_LEN 30
@@ -55,17 +58,24 @@ struct scan_recv_data {
 	bool has_csis;
 };
 
+typedef struct past_available_data {
+	uint8_t sid;
+	const bt_addr_le_t *addr;
+	bool result;
+} past_available_data_t;
+
 static bt_addr_le_t csis_members[CONFIG_BT_MAX_CONN];
 static uint8_t csis_members_cnt;
 static uint8_t csis_set_size;
 static uint8_t csis_sirk[BT_CSIP_SIRK_SIZE];
 
 static struct k_mutex source_data_list_mutex;
-static struct bt_le_per_adv_sync *pa_sync;
-static volatile bool pa_syncing;
+static struct bt_le_per_adv_sync *pa_sync = NULL;
+static volatile bool pa_sync_transfer;
 
 static K_SEM_DEFINE(sem_rem_source, 1U, 1U);
 static K_SEM_DEFINE(sem_add_source, 1U, 1U);
+static K_SEM_DEFINE(sem_pa_sync, 0U, 1U);
 
 static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err,
 					    uint8_t recv_state_count);
@@ -108,8 +118,8 @@ static void csip_ordered_access_cb(const struct bt_csip_set_coordinator_set_info
 				  bool locked, struct bt_csip_set_coordinator_set_member *member);
 static void csis_discover_work_handler(struct k_work *work);
 
+static void pa_sync_delete(void);
 static void pa_sync_delete_work_handler(struct k_work *work);
-static void pa_sync_create_timeout_work_handler(struct k_work *work);
 static void pa_sync_create_timer_handler(struct k_timer *dummy);
 static void reset_csis_data(uint8_t set_size, uint8_t sirk[BT_CSIP_SIRK_SIZE]);
 
@@ -165,7 +175,6 @@ static struct bt_conn *csis_conn;
 
 K_WORK_DEFINE(vcs_discover_work, vcs_discover_work_handler);
 K_WORK_DEFINE(csis_discover_work, csis_discover_work_handler);
-K_WORK_DEFINE(pa_sync_create_timeout_work, pa_sync_create_timeout_work_handler);
 K_WORK_DEFINE(pa_sync_delete_work, pa_sync_delete_work_handler);
 
 K_TIMER_DEFINE(pa_sync_create_timer, pa_sync_create_timer_handler, NULL);
@@ -173,24 +182,22 @@ K_TIMER_DEFINE(pa_sync_create_timer, pa_sync_create_timer_handler, NULL);
 /*
  * Private functions
  */
-static void pa_sync_create_timeout_work_handler(struct k_work *work)
-{
-	LOG_WRN("PA sync create timeout");
-	if (pa_syncing) {
-		k_work_submit(&pa_sync_delete_work);
-		pa_syncing = false;
-	}
-}
-
 static void pa_sync_delete_work_handler(struct k_work *work)
 {
 	int err;
 
-	LOG_INF("pa_sync_delete");
+	if (pa_sync == NULL) {
+		LOG_INF("No PA sync to delete");
 
+		return;
+	}
+
+	LOG_INF("PA sync delete");
 	err = bt_le_per_adv_sync_delete(pa_sync);
 	if (err) {
-		LOG_INF("bt_le_per_adv_sync_delete failed (%d)", err);
+		LOG_ERR("bt_le_per_adv_sync_delete failed (%d)", err);
+	} else {
+		pa_sync = NULL;
 	}
 }
 
@@ -220,7 +227,11 @@ static void csis_discover_work_handler(struct k_work *work)
 
 static void pa_sync_create_timer_handler(struct k_timer *dummy)
 {
-    k_work_submit(&pa_sync_create_timeout_work);
+	LOG_WRN("PA sync create timeout");
+
+	/* PA sync create timeout => Delete PA sync */
+	k_work_submit(&pa_sync_delete_work);
+	k_sem_give(&sem_pa_sync);
 }
 
 static void reset_source_data(uint8_t pa_attempt)
@@ -641,10 +652,21 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		case BT_BAP_PA_STATE_INFO_REQ:
 			LOG_INF("BT_BAP_PA_STATE_INFO_REQ");
 			evt_msg_sub_type = MESSAGE_SUBTYPE_NEW_PA_STATE_INFO_REQ;
+			if (pa_sync && IS_ENABLED(CONFIG_BT_PER_ADV_SYNC_TRANSFER_SENDER)) {
+				LOG_INF("Transfer PA sync");
+				err = bt_le_per_adv_sync_transfer(pa_sync, conn, BT_UUID_BASS_VAL);
+				if (err != 0) {
+					LOG_ERR("Could not transfer periodic adv sync: %d", err);
+				}
+			}
 			break;
 		case BT_BAP_PA_STATE_SYNCED:
 			LOG_INF("BT_BAP_PA_STATE_SYNCED (src_id = %u)", state->src_id);
 			evt_msg_sub_type = MESSAGE_SUBTYPE_NEW_PA_STATE_SYNCED;
+			if (pa_sync_transfer) {
+				pa_sync_delete(); /* delete pa sync if needed */
+				pa_sync_transfer = false;
+			}
 			break;
 		case BT_BAP_PA_STATE_FAILED:
 			LOG_INF("BT_BAP_PA_STATE_FAILED");
@@ -653,6 +675,10 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		case BT_BAP_PA_STATE_NO_PAST:
 			LOG_INF("BT_BAP_PA_STATE_NO_PAST");
 			evt_msg_sub_type = MESSAGE_SUBTYPE_NEW_PA_STATE_NO_PAST;
+			if (pa_sync_transfer) {
+				pa_sync_delete(); /* delete pa sync if needed */
+				pa_sync_transfer = false;
+			}
 			break;
 		default:
 			LOG_ERR("Invalid State Transition");
@@ -1069,6 +1095,7 @@ static void pa_synced_cb(struct bt_le_per_adv_sync *sync,
 	LOG_INF("PA sync %p synced", (void *)sync);
 
 	k_timer_stop(&pa_sync_create_timer);
+	k_sem_give(&sem_pa_sync);
 }
 
 static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
@@ -1110,11 +1137,8 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 
 		message_send_net_buf_event(evt_msg_sub_type, evt_msg);
 
-		if (pa_syncing) {
-			LOG_INF("Delete PA sync");
-			k_timer_stop(&pa_sync_create_timer);
-			k_work_submit(&pa_sync_delete_work);
-			pa_syncing = false;
+		if (pa_sync != NULL && !pa_sync_transfer) {
+			pa_sync_delete();
 		}
 	}
 }
@@ -1123,6 +1147,8 @@ static void pa_term_cb(struct bt_le_per_adv_sync *sync,
 		       const struct bt_le_per_adv_sync_term_info *info)
 {
 	LOG_INF("PA terminated %p %u", (void *)sync, info->reason);
+
+	k_sem_give(&sem_pa_sync);
 }
 
 static void pa_biginfo_cb(struct bt_le_per_adv_sync *sync, const struct bt_iso_biginfo *biginfo)
@@ -1190,6 +1216,12 @@ static uint16_t interval_to_sync_timeout(uint16_t pa_interval)
 	return pa_timeout;
 }
 
+static void pa_sync_delete(void)
+{
+	k_timer_stop(&pa_sync_create_timer);
+	k_work_submit(&pa_sync_delete_work);
+}
+
 static int pa_sync_create(bt_addr_le_t *addr, uint8_t sid, uint32_t interval)
 {
 	struct bt_le_per_adv_sync_param per_adv_sync_param = {0};
@@ -1237,7 +1269,7 @@ static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_
 		}
 
 		/* Already PA syncing */
-		if (!pa_syncing) {
+		if (pa_sync == NULL) {
 			/* Source data alvailable and PA sync allowed? */
 			if (source_data != NULL && source_data->pa_attempt_cd > 0) {
 				LOG_INF("PA sync create (b_id = 0x%06x, \"%s\", cd = %u)",
@@ -1248,7 +1280,6 @@ static bool scan_for_source(const struct bt_le_scan_recv_info *info, struct net_
 				if (err != 0) {
 					LOG_INF("Could not create Broadcast PA sync: %d", err);
 				} else {
-					pa_syncing = true;
 					source_data->pa_attempt_cd--;
 				}
 			}
@@ -1519,7 +1550,7 @@ static void add_source_foreach_sink(struct bt_conn *conn, void *data)
 
 	err = k_sem_take(&sem_add_source, SYS_TIMEOUT_MS(2000));
 	if (err != 0) {
-		LOG_ERR("sem_rem_source timed out");
+		LOG_ERR("sem_add_source timed out");
 	}
 
 	/* Clear recv_state */
@@ -1590,6 +1621,33 @@ static void add_broadcast_code_foreach_sink(struct bt_conn *conn, void *data)
 	}
 }
 
+static bool past_available(const struct bt_conn *conn,
+			   const bt_addr_le_t *adv_addr,
+			   uint8_t sid)
+{
+	if (IS_ENABLED(CONFIG_BT_PER_ADV_SYNC_TRANSFER_SENDER)) {
+		LOG_INF("%p remote %s PAST, local %s PAST", (void *)conn,
+			BT_FEAT_LE_PAST_RECV(conn->le.features) ? "supports" : "does not support",
+			BT_FEAT_LE_PAST_SEND(bt_dev.le.features) ? "supports" : "does not support");
+
+		return BT_FEAT_LE_PAST_RECV(conn->le.features) &&
+		       BT_FEAT_LE_PAST_SEND(bt_dev.le.features) /*&&
+		       bt_le_per_adv_sync_lookup_addr(adv_addr, sid) != NULL*/;
+	} else {
+		return false;
+	}
+}
+
+static void check_past_available_foreach_sink(struct bt_conn *conn, void *data)
+{
+	past_available_data_t *past_available_data = (past_available_data_t *)data;
+	bool result;
+
+	result = past_available(conn, past_available_data->addr, past_available_data->sid);
+
+	LOG_INF("PAST available: %s", result ? "YES" : "NO");
+}
+
 /*
  * Public functions
  */
@@ -1636,12 +1694,7 @@ int broadcast_assistant_stop_scanning(void)
 
 	LOG_INF("Scanning stopped");
 
-	if (pa_syncing) {
-		LOG_INF("Delete PA sync");
-		k_timer_stop(&pa_sync_create_timer);
-		k_work_submit(&pa_sync_delete_work);
-		pa_syncing = false;
-	}
+	pa_sync_delete(); /* delete pa sync if needed */
 
 	return 0;
 }
@@ -1694,13 +1747,7 @@ int broadcast_assistant_connect_to_sink(bt_addr_le_t *bt_addr_le)
 		}
 	}
 
-	/* Stop PA syncing if needed */
-	if (pa_syncing) {
-		LOG_WRN("Delete PA sync");
-		k_timer_stop(&pa_sync_create_timer);
-		k_work_submit(&pa_sync_delete_work);
-		pa_syncing = false;
-	}
+	pa_sync_delete(); /* delete pa sync if needed */
 
 	k_sleep(K_MSEC(100)); /* sleep added to improve robustness */
 
@@ -1768,8 +1815,38 @@ int broadcast_assistant_add_source(uint8_t sid, uint16_t pa_interval, uint32_t b
 {
 	LOG_INF("Adding broadcast source (%u)...", broadcast_id);
 
+	int err;
 	struct bt_bap_bass_subgroup subgroup[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS] = {{0}};
 	struct bt_bap_broadcast_assistant_add_src_param param = {0};
+	past_available_data_t past_available_data = {.sid = sid, .addr = addr, .result = true};
+
+	bt_conn_foreach(BT_CONN_TYPE_LE, check_past_available_foreach_sink, &past_available_data);
+
+	/* If past available - sync first before adding src */
+	if (past_available_data.result) {
+		LOG_INF("PAST available");
+
+		k_sem_reset(&sem_pa_sync);
+
+		if (pa_sync != NULL) {
+			pa_sync_delete();
+			/* Wait for PA sync stopped */
+			k_sem_take(&sem_pa_sync, K_FOREVER);
+		}
+
+		if (pa_sync == NULL) {
+			err = pa_sync_create(addr, sid, pa_interval);
+			if (err != 0) {
+				LOG_ERR("Could not create Broadcast PA sync: %d", err);
+			} else {
+				pa_sync_transfer = true;
+				/* Wait for PA synced */
+				k_sem_take(&sem_pa_sync, K_FOREVER);
+			}
+		}
+	}
+
+	LOG_INF("Add source");
 
 	num_subgroups = MIN(num_subgroups, CONFIG_BT_BAP_BASS_MAX_SUBGROUPS);
 	for (int i = 0; i < num_subgroups; i++) {
@@ -1820,7 +1897,7 @@ int broadcast_assistant_pa_sync(bt_addr_le_t *addr, uint8_t sid, uint16_t interv
 		return -EINVAL;
 	}
 
-	if (pa_syncing) {
+	if (pa_sync != NULL) {
 		LOG_ERR("Already PA syncing");
 
 		return -EBUSY;
@@ -1835,8 +1912,6 @@ int broadcast_assistant_pa_sync(bt_addr_le_t *addr, uint8_t sid, uint16_t interv
 
 		return err;
 	}
-
-	pa_syncing = true;
 
 	return 0;
 }

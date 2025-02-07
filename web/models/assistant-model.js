@@ -212,6 +212,10 @@ class AssistantModel extends EventTarget {
 
 		let source = this.#sources.find(i => compareTypedArray(i.addr.value.addr, addr.value.addr));
 		if (source && big_info) {
+			if (source.big_info) {
+				// Already stored, bail out
+				return;
+			}
 			source.big_info = big_info;
 			this.dispatchEvent(new CustomEvent('big-info-updated', {detail: { source }}));
 		}
@@ -239,6 +243,10 @@ class AssistantModel extends EventTarget {
 
 		let source = this.#sources.find(i => compareTypedArray(i.addr.value.addr, addr.value.addr));
 		if (source && base) {
+			if (source.base) {
+				// Already stored, bail out
+				return;
+			}
 			source.base = base;
 			this.dispatchEvent(new CustomEvent('base-updated', {detail: { source }}));
 		}
@@ -590,7 +598,7 @@ class AssistantModel extends EventTarget {
 		const err = tvArrayFindItem(payloadArray, [
 			BT_DataType.BT_DATA_ERROR_CODE
 		])?.value;
-	
+
 		if (err !== 0) {
 			console.log("Error code", err);
 		}
