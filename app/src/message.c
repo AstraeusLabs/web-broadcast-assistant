@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(message_handler, LOG_LEVEL_INF);
 NET_BUF_POOL_DEFINE(command_tx_msg_pool, CONFIG_TX_MSG_MAX_MESSAGES,
 		    sizeof(struct webusb_message) + CONFIG_TX_MSG_MAX_PAYLOAD_LEN, 0, NULL);
 
-#define DEFAULT_PA_SYNC_ATTEMPT 0
+#define DEFAULT_PA_SYNC_ATTEMPT 10
 
 struct webusb_ltv_data {
 	uint8_t adv_sid;
