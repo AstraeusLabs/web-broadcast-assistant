@@ -29,7 +29,7 @@ LOG_MODULE_REGISTER(broadcast_assistant, LOG_LEVEL_INF);
 
 typedef struct add_broadcast_code_data {
 	uint8_t src_id;
-	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
+	uint8_t broadcast_code[BT_ISO_BROADCAST_CODE_SIZE];
 } add_broadcast_code_data_t;
 
 typedef struct source_data {
@@ -604,7 +604,7 @@ static void broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 		case BT_BAP_BIG_ENC_STATE_BAD_CODE:
 			LOG_INF("The Broadcast Isochronous Group bad broadcast code");
 			evt_msg_sub_type = MESSAGE_SUBTYPE_NEW_ENC_STATE_BAD_CODE;
-			LOG_HEXDUMP_INF(state->bad_code, BT_AUDIO_BROADCAST_CODE_SIZE,
+			LOG_HEXDUMP_INF(state->bad_code, BT_ISO_BROADCAST_CODE_SIZE,
 					"bad broadcast code:");
 			break;
 		default:
@@ -1870,15 +1870,15 @@ int broadcast_assistant_remove_source(uint8_t source_id, uint8_t num_subgroups)
 }
 
 int broadcast_assistant_add_broadcast_code(
-	uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE])
+	uint8_t src_id, const uint8_t broadcast_code[BT_ISO_BROADCAST_CODE_SIZE])
 {
 	add_broadcast_code_data_t add_broadcast_code_data;
 
 	LOG_INF("Adding broadcast code for src %u ...", src_id);
-	LOG_HEXDUMP_INF(broadcast_code, BT_AUDIO_BROADCAST_CODE_SIZE, "broadcast code:");
+	LOG_HEXDUMP_INF(broadcast_code, BT_ISO_BROADCAST_CODE_SIZE, "broadcast code:");
 
 	add_broadcast_code_data.src_id = src_id;
-	memcpy(add_broadcast_code_data.broadcast_code, broadcast_code, BT_AUDIO_BROADCAST_CODE_SIZE);
+	memcpy(add_broadcast_code_data.broadcast_code, broadcast_code, BT_ISO_BROADCAST_CODE_SIZE);
 
 	/* FIXME: Incase source id is not the same foreach sink then this will not work */
 	bt_conn_foreach(BT_CONN_TYPE_LE, add_broadcast_code_foreach_sink, &add_broadcast_code_data);

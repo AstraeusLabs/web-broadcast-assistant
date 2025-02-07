@@ -6,7 +6,7 @@
 
 #include <zephyr/types.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 
 #include "message.h"
 

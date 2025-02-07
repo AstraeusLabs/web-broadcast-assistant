@@ -48,7 +48,7 @@ int broadcast_assistant_add_source(uint8_t sid, uint16_t pa_interval, uint32_t b
 int broadcast_assistant_pa_sync(bt_addr_le_t *addr, uint8_t sid, uint16_t interval);
 int broadcast_assistant_remove_source(uint8_t source_id, uint8_t num_subgroups);
 int broadcast_assistant_add_broadcast_code(
-	uint8_t src_id, const uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE]);
+	uint8_t src_id, const uint8_t broadcast_code[BT_ISO_BROADCAST_CODE_SIZE]);
 int broadcast_assistant_set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume);
 int broadcast_assistant_set_mute(bt_addr_le_t *bt_addr_le, uint8_t state);
 int broadcast_assistant_reset(void);
