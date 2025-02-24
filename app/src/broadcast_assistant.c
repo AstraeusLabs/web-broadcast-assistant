@@ -1646,6 +1646,9 @@ static void check_past_available_foreach_sink(struct bt_conn *conn, void *data)
 	result = past_available(conn, past_available_data->addr, past_available_data->sid);
 
 	LOG_INF("PAST available: %s", result ? "YES" : "NO");
+
+	/* Only use PAST if ALL devices support it */
+	past_available_data->result = past_available_data->result && result;
 }
 
 /*
