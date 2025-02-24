@@ -849,7 +849,8 @@ class AssistantModel extends EventTarget {
 		];
 
 		// If the source has BASE information and there is more than one subgroup,
-		// send 0's for all subgroups except the last, which will be 0xFFFFFFFF (no pref)
+		// send 0's for all subgroups except the chosen, which will be 0xFFFFFFFF (no pref)
+		// (or specific bitmask, but commented out for now)
 		if (source.base?.subgroups?.length) {
 			const value = [];
 
@@ -861,7 +862,11 @@ class AssistantModel extends EventTarget {
 						if (bis.index) {
 							bis_sync += 1 << (bis.index-1);
 						}
-					})
+					});
+					// Setting more than one bit or NO_PREF confuses some earbuds
+					// so for now, just send NO_PREF and let the earbud determine
+					// LEFT or RIGHT from channel allocation.
+					bis_sync = 0xFFFFFFFF;  // Comment this out to go back to bitmask
 					value.push(bis_sync);
 				} else {
 					value.push(0);
