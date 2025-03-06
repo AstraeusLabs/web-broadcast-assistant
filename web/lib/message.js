@@ -326,10 +326,12 @@ const parseLTVItem = (type, len, value) => {
 			break;
 		case BT_DataType.BT_DATA_BIG_INFO:
 			item.value = parse_big_info(value);
+			item.value.raw_data = Array.from(value);
 			console.log('BIG Info received', value, JSON.stringify(item.value, null, 2));
 			break;
 		case BT_DataType.BT_DATA_BASE:
 			item.value = parse_base(value);
+			item.value.raw_data = Array.from(value);
 			console.log('BASE received', value, JSON.stringify(item.value, null, 2));
 			break;
 		default:
