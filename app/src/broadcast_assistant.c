@@ -209,6 +209,7 @@ static void vcs_discover_work_handler(struct k_work *work)
 	err = bt_vcp_vol_ctlr_discover(vcs_conn, &vcs_ctlr);
 	if (err != 0) {
 		LOG_ERR("Failed to discover vcs (err %d)", err);
+		bt_conn_unref(vcs_conn);
 		vcs_conn = NULL;
 	}
 }
@@ -221,6 +222,7 @@ static void csis_discover_work_handler(struct k_work *work)
 	err = bt_csip_set_coordinator_discover(csis_conn);
 	if (err != 0) {
 		LOG_ERR("bt_csip_set_coordinator_discover failed (err %d)", err);
+		bt_conn_unref(csis_conn);
 		csis_conn = NULL;
 	}
 }
@@ -339,12 +341,14 @@ static void broadcast_assistant_discover_cb(struct bt_conn *conn, int err, uint8
 	/* Discover VCS */
 	if (vcs_conn == NULL) {
 		vcs_conn = conn;
+		bt_conn_ref(vcs_conn);
 		k_work_submit(&vcs_discover_work);
 	}
 
 	/* Discover CSIS */
 	if (csis_conn == NULL) {
 		csis_conn = conn;
+		bt_conn_ref(csis_conn);
 		k_work_submit(&csis_discover_work);
 	}
 
@@ -361,6 +365,7 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 
 	if (err != 0) {
 		LOG_WRN("Volume control service could not be discovered (%d)", err);
+		bt_conn_unref(vcs_conn);
 		vcs_conn = NULL;
 
 		return;
@@ -368,6 +373,7 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 
 	if (bt_vcp_vol_ctlr_conn_get(vol_ctlr, &conn) != 0) {
 		LOG_ERR("Volume control conn error\n");
+		bt_conn_unref(vcs_conn);
 		vcs_conn = NULL;
 
 		return;
@@ -390,6 +396,7 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t v
 
 	message_send_net_buf_event(MESSAGE_SUBTYPE_VOLUME_CONTROL_FOUND, evt_msg);
 
+	bt_conn_unref(vcs_conn);
 	vcs_conn = NULL;
 }
 
@@ -512,6 +519,7 @@ static void csip_discover_cb(struct bt_conn *conn,
 
 	if (err != 0) {
 		LOG_ERR("Coordinated Set Identification could not be discovered (%d)", err);
+		bt_conn_unref(csis_conn);
 		csis_conn = NULL;
 
 		return;
@@ -519,6 +527,7 @@ static void csip_discover_cb(struct bt_conn *conn,
 
 	if (set_count == 0) {
 		LOG_WRN("Device has no sets");
+		bt_conn_unref(csis_conn);
 		csis_conn = NULL;
 
 		return;
@@ -565,6 +574,7 @@ static void csip_discover_cb(struct bt_conn *conn,
 
 	message_send_net_buf_event(MESSAGE_SUBTYPE_SET_IDENTIFIER_FOUND, evt_msg);
 
+	bt_conn_unref(csis_conn);
 	csis_conn = NULL;
 }
 
@@ -1776,7 +1786,7 @@ int broadcast_assistant_disconnect_from_sink(bt_addr_le_t *bt_addr_le)
 	char addr_str[BT_ADDR_LE_STR_LEN];
 
 	bt_addr_le_to_str(bt_addr_le, addr_str, sizeof(addr_str));
-	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le);
+	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le); /* call does a bt_conn_ref */
 
 	LOG_INF("Disconnecting from %s %p...", addr_str, (void *)conn);
 
@@ -1970,7 +1980,7 @@ int broadcast_assistant_set_volume(bt_addr_le_t *bt_addr_le, uint8_t volume)
 	struct bt_vcp_vol_ctlr *vol_ctlr;
 	int err;
 
-	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le);
+	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le); /* call does a bt_conn_ref */
 	if (!conn) {
 		LOG_ERR("Failed to lookup connection");
 
@@ -2005,7 +2015,7 @@ int broadcast_assistant_set_mute(bt_addr_le_t *bt_addr_le, uint8_t state)
 	struct bt_vcp_vol_ctlr *vol_ctlr;
 	int err;
 
-	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le);
+	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, bt_addr_le); /* call does a bt_conn_ref */
 	if (!conn) {
 		LOG_ERR("Failed to lookup connection");
 
