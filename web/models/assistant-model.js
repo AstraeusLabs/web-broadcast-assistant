@@ -1067,6 +1067,16 @@ class AssistantModel extends EventTarget {
 		this.#service.sendCMD(message);
 	}
 
+	setAllVolume(volume) {
+		console.log(`Set Volume on all connected sinks to ${volume}`);
+
+		this.#sinks.forEach( sink => {
+			if (sink.state === "connected") {
+				this.setVolume(sink, volume);
+			}
+		});
+	}
+
 	setMute(sink, state) {
 		console.log("Set Mute/Unmute on Sink CMD");
 

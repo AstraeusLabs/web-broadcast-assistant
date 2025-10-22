@@ -38,6 +38,12 @@ input {
 	margin-bottom: 10px;
 }
 
+#volume {
+	width: 100%;
+	margin-top: 5px;
+	margin-bottom: 24px;
+}
+
 .hidden {
 	display: none;
 }
@@ -49,10 +55,23 @@ input {
 <div id="container">
 <h3>Connect to device(s)</h3>
 <input id="filter" class="details" placeholder="Filter...">
+<label for="volume" class="details">Volume</label>
+<input type="range" min="0" max="255" name="volume" id="volume" class="details">
 <div id="list">
 </div>
 </div>
 `;
+
+function debounce(func, delay) {
+  let timerId;
+  return function(...args) {
+    const context = this;
+    clearTimeout(timerId);
+    timerId = setTimeout(() => {
+      func.apply(context, args);
+    }, delay);
+  };
+}
 
 export class SinkDeviceList extends HTMLElement {
 	#list
@@ -71,6 +90,8 @@ export class SinkDeviceList extends HTMLElement {
 		this.sinkDisconnected = this.sinkDisconnected.bind(this);
 		this.sinkClicked = this.sinkClicked.bind(this);
 
+		this.debouncedSetVolume = debounce(this.setVolume.bind(this), 300);
+
 		const shadowRoot = this.attachShadow({mode: 'open'});
 	}
 
@@ -81,6 +102,7 @@ export class SinkDeviceList extends HTMLElement {
 		// Add listeners, etc.
 		this.#list = this.shadowRoot?.querySelector('#list');
 		this.shadowRoot?.querySelector('#filter')?.addEventListener('input', evt => { this.setFilter(evt?.target.value) } );
+		this.shadowRoot?.querySelector('#volume')?.addEventListener('input', evt => { this.debouncedSetVolume(evt?.target.value) } );
 
 		this.#model = AssistantModel.getInstance();
 
@@ -113,6 +135,16 @@ export class SinkDeviceList extends HTMLElement {
 		} else  {
 			this.#model.connectSink(sink);
 		}
+	}
+
+	setVolume(vol) {
+		if (isNaN(vol) || vol < 0 || vol > 255) {
+			console.warn('Invalid volume value:', vol);
+			return;
+		}
+
+		// Set volume for all connected sinks
+		this.#model.setAllVolume(vol);
 	}
 
 	setFilter(str) {
